@@ -9,6 +9,10 @@ resQ provides the operating protocols for autonomous drone swarms, ensuring coor
 *   **Autonomous Coordination:** Swarm protocols for GPS-denied environments.
 *   **Critical Logistics:** Secure, automated delivery networks.
 
+## Repositories
+*   **[resQ Core](https://github.com/resq-software/resQ):** The main ecosystem repository.
+*   **[Documentation](https://github.com/resq-software/docs):** Technical guides and protocols.
+
 ## Contact
 We are building the future of autonomous response.
 
