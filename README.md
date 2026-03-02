@@ -5,11 +5,11 @@
 <h1 align="center">resQ</h1>
 
 <p align="center">
-  resQ is a protocol-driven autonomous drone swarm platform designed for decentralized disaster response and critical logistics. We build high-reliability, polyglot systems that ensure coordination and safety in GPS-denied, low-bandwidth, and infrastructure-critical environments.
+  resQ is a mission-critical autonomous platform designed for decentralized coordination in disaster response and emergency logistics. We provide the resilient infrastructure required for autonomous systems to operate reliably when traditional networks and infrastructure fail.
 </p>
 
 <p align="center">
-  Our architecture follows a <strong>simulation-first methodology</strong>, where every flight protocol and swarm behavior is rigorously verified in high-fidelity digital twins (PX4 SITL / Gazebo) before hardware deployment. By leveraging a distributed trust layer across Solana and Neo N3, resQ provides an immutable audit trail for mission-critical evidence and autonomous decision-making.
+  Built with a focus on <strong>security, autonomy, and decentralization</strong>, resQ ensures that critical response efforts remain coordinated, verifiable, and effective in the most challenging environments on Earth.
 </p>
 
 <p align="center">
@@ -22,9 +22,8 @@
 </p>
 
 ## Core Projects
-*   **[resQ Core](https://github.com/resq-software/resQ):** The primary polyglot monorepo orchestrating seven microservices across Rust, TypeScript, Python, C++, and .NET.
-*   **[Documentation](https://github.com/resq-software/docs):** Comprehensive technical guides, protocol specifications, and architectural overviews.
-*   **[Protocols](https://github.com/resq-software/resQ/tree/main/libs/protocols):** The single source of truth for our cross-language communication via Protocol Buffers.
+*   **[resQ Core](https://github.com/resq-software/resQ):** The primary engine for autonomous coordination and swarm management.
+*   **[Documentation](https://github.com/resq-software/docs):** Technical guides, mission protocols, and operational overviews.
 
 ## Contact
 *   **Engineering:** `engineer@resq.software`
