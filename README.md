@@ -5,11 +5,11 @@
 <h1 align="center">resQ</h1>
 
 <p align="center">
-  <strong>Protocol-driven autonomous drone swarm platform.</strong>
+  resQ is a protocol-driven autonomous drone swarm platform designed for decentralized disaster response and critical logistics. We build high-reliability, polyglot systems that ensure coordination and safety in GPS-denied, low-bandwidth, and infrastructure-critical environments.
 </p>
 
 <p align="center">
-  resQ builds decentralized, high-reliability software for autonomous systems in critical environments.
+  Our architecture follows a <strong>simulation-first methodology</strong>, where every flight protocol and swarm behavior is rigorously verified in high-fidelity digital twins (PX4 SITL / Gazebo) before hardware deployment. By leveraging a distributed trust layer across Solana and Neo N3, resQ provides an immutable audit trail for mission-critical evidence and autonomous decision-making.
 </p>
 
 <p align="center">
@@ -22,8 +22,9 @@
 </p>
 
 ## Core Projects
-*   **[resQ Core](https://github.com/resq-software/resQ):** The primary monorepo for drone coordination and infrastructure.
-*   **[Documentation](https://github.com/resq-software/docs):** Technical guides, specifications, and architecture overviews.
+*   **[resQ Core](https://github.com/resq-software/resQ):** The primary polyglot monorepo orchestrating seven microservices across Rust, TypeScript, Python, C++, and .NET.
+*   **[Documentation](https://github.com/resq-software/docs):** Comprehensive technical guides, protocol specifications, and architectural overviews.
+*   **[Protocols](https://github.com/resq-software/resQ/tree/main/libs/protocols):** The single source of truth for our cross-language communication via Protocol Buffers.
 
 ## Contact
 *   **Engineering:** `engineer@resq.software`

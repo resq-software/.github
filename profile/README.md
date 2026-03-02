@@ -9,7 +9,11 @@
 </p>
 
 <p align="center">
-  resQ provides the operating protocols for autonomous drone swarms, ensuring coordination and safety when traditional infrastructure fails.
+  resQ provides the operating protocols for autonomous drone swarms, ensuring coordination and safety when traditional infrastructure fails. Our mission is to deliver resilient, decentralized software for critical response and automated logistics.
+</p>
+
+<p align="center">
+  Built on a foundation of <strong>on-chain trust</strong> and <strong>simulation-first engineering</strong>, resQ orchestrates complex swarm behaviors across diverse computational environments—from edge AI on ROS 2 to predictive modeling in Python and high-performance infrastructure in Rust.
 </p>
 
 <p align="center">
@@ -19,9 +23,10 @@
 </p>
 
 ## Core Focus
-*   **Decentralized Navigation:** Tamper-proof location verification.
-*   **Autonomous Coordination:** Swarm protocols for GPS-denied environments.
-*   **Critical Logistics:** Secure, automated delivery networks.
+*   **Decentralized Navigation:** Tamper-proof location verification and swarm coordination in GPS-denied environments.
+*   **Autonomous Intelligence:** Edge-AI perception (ROS 2) and predictive disaster modeling (FastAPI/ML).
+*   **Immutable Trust:** Blockchain-anchored evidence (Solana/Neo N3) and decentralized storage (IPFS/Pinata) for critical mission data.
+*   **Protocol-First Safety:** Strict type-safe communication contracts powered by Protocol Buffers across all services.
 
 ## Repositories
 *   **[resQ Core](https://github.com/resq-software/resQ):** The main ecosystem repository.
