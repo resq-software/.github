@@ -11,3 +11,5 @@ resQ builds decentralized, high-reliability software for autonomous systems in c
 ## Contact
 *   **Engineering:** `engineer@resq.software`
 *   **Partnerships:** `contact@resq.software`
+*   **X (Twitter):** [@ResQSoftware](https://x.com/ResQSoftware)
+*   **LinkedIn:** [resq-software](https://www.linkedin.com/company/resq-software/)

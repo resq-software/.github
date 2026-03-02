@@ -18,5 +18,7 @@ We are building the future of autonomous response.
 
 *   **Engineering:** `engineer@resq.software`
 *   **Partnerships:** `contact@resq.software`
+*   **X (Twitter):** [@ResQSoftware](https://x.com/ResQSoftware)
+*   **LinkedIn:** [resq-software](https://www.linkedin.com/company/resq-software/)
 
 This project is licensed under the **Apache License 2.0**.
