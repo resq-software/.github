@@ -1,8 +1,22 @@
-# resQ
+<p align="center">
+  <img src="../assets/banner.png" alt="resQ Banner" width="100%">
+</p>
 
-**Secure. Autonomous. Decentralized.**
+<h1 align="center">resQ</h1>
 
-resQ provides the operating protocols for autonomous drone swarms, ensuring coordination and safety when traditional infrastructure fails.
+<p align="center">
+  <strong>Secure. Autonomous. Decentralized.</strong>
+</p>
+
+<p align="center">
+  resQ provides the operating protocols for autonomous drone swarms, ensuring coordination and safety when traditional infrastructure fails.
+</p>
+
+<p align="center">
+  <a href="https://github.com/resq-software/resQ/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/resq-software/resQ?color=blue&style=flat-square" alt="License">
+  </a>
+</p>
 
 ## Core Focus
 *   **Decentralized Navigation:** Tamper-proof location verification.
