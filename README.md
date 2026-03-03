@@ -26,7 +26,7 @@
 *   **[Documentation](https://github.com/resq-software/docs):** Technical guides, mission protocols, and operational overviews.
 
 ## Contact
-*   **Engineering:** `engineer@resq.software`
-*   **Partnerships:** `contact@resq.software`
+*   **Engineering:** [engineer@resq.software](mailto:engineer@resq.software)
+*   **Partnerships:** [contact@resq.software](mailto:contact@resq.software)
 *   **X (Twitter):** [@ResQSoftware](https://x.com/ResQSoftware)
 *   **LinkedIn:** [resq-software](https://www.linkedin.com/company/resq-software/)
