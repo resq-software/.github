@@ -30,6 +30,24 @@
 *   **Autonomous Intelligence:** Advanced edge-perception and mission-critical decision making.
 *   **Verifiable Trust:** Immutable audit trails and secure data management for emergency response.
 
+## Project Resources
+
+| Resource | Description | Status |
+| :--- | :--- | :--- |
+| **🏗️ Architecture Overview** | A resilient, multi-layered system designed for decentralized swarm orchestration and mission-critical reliability. | **Live** |
+| **📑 Presentation Slides** | Technical deep-dive and mission protocols. | *In Progress* |
+| **🎬 Launch & Demo Video** | Full mission simulation and real-time dashboard walkthrough. | *In Progress* |
+
+### System Architecture
+resQ is built on a **Simulation-First** philosophy, ensuring operational integrity through a distributed functional architecture:
+
+*   **Mission Orchestration:** Real-time fleet management and decentralized swarm coordination.
+*   **Predictive Intelligence:** Advanced data processing for disaster forecasting and path optimization.
+*   **Verifiable Trust Layer:** Secure anchoring of mission data for immutable evidence and audit trails.
+*   **Edge Perception:** High-performance on-device autonomy, obstacle avoidance, and sensor fusion.
+*   **Digital Twin Framework:** High-fidelity virtual environments for pre-mission validation and stress testing.
+*   **Command & Control:** Unified operator interface for real-time telemetry and mission oversight.
+
 ## Repositories
 *   **[resQ Core](https://github.com/resq-software/resQ):** The main ecosystem repository.
 *   **[Documentation](https://github.com/resq-software/docs):** Technical guides and protocols.
