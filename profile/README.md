@@ -49,8 +49,20 @@ resQ is built on a **Simulation-First** philosophy, ensuring operational integri
 *   **Command & Control:** Unified operator interface for real-time telemetry and mission oversight.
 
 ## Repositories
-*   **[resQ Core](https://github.com/resq-software/resQ):** The main ecosystem repository.
-*   **[Documentation](https://github.com/resq-software/docs):** Technical guides and protocols.
+
+### 🛠️ Core Platform
+*   **[resQ Core](https://github.com/resq-software/resQ):** The primary engine for autonomous coordination and swarm management (Private).
+*   **[On-Chain Programs](https://github.com/resq-software/programs):** Solana-based trust layer for airspace authorization and evidence attestation.
+*   **[Web UI](https://github.com/resq-software/ui):** Modern operator dashboard for real-time fleet visualization.
+
+### 🧰 SDKs & Tooling
+*   **[resQ CLI](https://github.com/resq-software/cli):** Unified developer tooling for the resQ platform.
+*   **[.NET SDK](https://github.com/resq-software/dotnet-sdk):** Official packages for blockchain integration, storage, and simulation.
+*   **[MCP Server](https://github.com/resq-software/mcp):** Model Context Protocol server exposing resQ capabilities to AI clients.
+
+### 📚 Documentation & Marketing
+*   **[Documentation](https://github.com/resq-software/docs):** Technical guides, mission protocols, and API references.
+*   **[Landing Page](https://github.com/resq-software/landing):** The official resQ marketing site.
 
 ## Contact
 We are building the future of autonomous response.
