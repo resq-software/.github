@@ -13,10 +13,6 @@
 </p>
 
 <p align="center">
-  Built on a foundation of <strong>verifiable trust</strong> and <strong>rigorous engineering</strong>, resQ orchestrates complex swarm behaviors to ensure life-saving missions can proceed without interruption, even in GPS-denied or low-connectivity scenarios.
-</p>
-
-<p align="center">
   <a href="https://github.com/resq-software/resQ/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/resq-software/resQ?color=blue&style=flat-square" alt="License">
   </a>
@@ -25,51 +21,46 @@
   </a>
 </p>
 
-## Core Focus
-*   **Decentralized Coordination:** Resilient swarm protocols for infrastructure-denied environments.
-*   **Autonomous Intelligence:** Advanced edge-perception and mission-critical decision making.
-*   **Verifiable Trust:** Immutable audit trails and secure data management for emergency response.
+## 🏗️ Core Capabilities
+resQ is built on a **Simulation-First** philosophy, ensuring operational integrity through a distributed functional architecture:
 
-## Project Resources
+*   **Swarm Orchestration:** Real-time fleet management and decentralized coordination for infrastructure-denied environments.
+*   **Edge Perception:** High-performance on-device autonomy, including obstacle avoidance and real-time sensor fusion.
+*   **Predictive Intelligence:** Advanced data processing for disaster forecasting and path optimization.
+*   **Verifiable Trust:** Secure anchoring of mission data for immutable evidence, audit trails, and decentralized identity.
+*   **Digital Twin Framework:** High-fidelity virtual environments for pre-mission validation and large-scale stress testing.
+
+## 📑 Project Resources
 
 | Resource | Description | Status |
 | :--- | :--- | :--- |
-| **🏗️ Architecture Overview** | A resilient, multi-layered system designed for decentralized swarm orchestration and mission-critical reliability. | **Live** |
-| **📑 Presentation Slides** | Technical deep-dive and mission protocols. | *In Progress* |
-| **🎬 Launch & Demo Video** | Full mission simulation and real-time dashboard walkthrough. | *In Progress* |
+| **Architecture Overview** | Deep-dive into our decentralized multi-layered system. | **Live** |
+| **Presentation Slides** | Technical protocols and mission-critical workflows. | *In Progress* |
+| **Launch & Demo Video** | End-to-end mission simulation and dashboard walkthrough. | *In Progress* |
 
-### System Architecture
-resQ is built on a **Simulation-First** philosophy, ensuring operational integrity through a distributed functional architecture:
+## 🌐 Ecosystem Repositories
 
-*   **Mission Orchestration:** Real-time fleet management and decentralized swarm coordination.
-*   **Predictive Intelligence:** Advanced data processing for disaster forecasting and path optimization.
-*   **Verifiable Trust Layer:** Secure anchoring of mission data for immutable evidence and audit trails.
-*   **Edge Perception:** High-performance on-device autonomy, obstacle avoidance, and sensor fusion.
-*   **Digital Twin Framework:** High-fidelity virtual environments for pre-mission validation and stress testing.
-*   **Command & Control:** Unified operator interface for real-time telemetry and mission oversight.
-
-## Repositories
-
-### 🛠️ Core Platform
-*   **[resQ Core](https://github.com/resq-software/resQ):** The primary engine for autonomous coordination and swarm management (Private).
-*   **[On-Chain Programs](https://github.com/resq-software/programs):** Solana-based trust layer for airspace authorization and evidence attestation.
-*   **[Web UI](https://github.com/resq-software/ui):** Modern operator dashboard for real-time fleet visualization.
+### 🚢 Core Platform
+*   **[resQ Core](https://github.com/resq-software/resQ):** The primary engine for autonomous swarm management (Private).
+*   **[On-Chain Programs](https://github.com/resq-software/programs):** Solana-based trust layer for airspace and evidence attestation.
+*   **[Web Dashboard](https://github.com/resq-software/ui):** Modern operator interface for real-time fleet visualization.
 
 ### 🧰 SDKs & Tooling
-*   **[resQ CLI](https://github.com/resq-software/cli):** Unified developer tooling for the resQ platform.
-*   **[.NET SDK](https://github.com/resq-software/dotnet-sdk):** Official packages for blockchain integration, storage, and simulation.
-*   **[MCP Server](https://github.com/resq-software/mcp):** Model Context Protocol server exposing resQ capabilities to AI clients.
+*   **[resQ CLI](https://github.com/resq-software/cli):** Unified developer tooling and repository orchestration.
+*   **[.NET SDK](https://github.com/resq-software/dotnet-sdk):** Official packages for blockchain, storage, and simulation.
+*   **[MCP Server](https://github.com/resq-software/mcp):** Model Context Protocol server exposing capabilities to AI clients.
 
-### 📚 Documentation & Marketing
-*   **[Documentation](https://github.com/resq-software/docs):** Technical guides, mission protocols, and API references.
+### 📖 Documentation
+*   **[Documentation](https://github.com/resq-software/docs):** Technical guides, protocols, and API references.
 *   **[Landing Page](https://github.com/resq-software/landing):** The official resQ marketing site.
 
-## Contact
-We are building the future of autonomous response.
+## ✉️ Contact
+We are building the future of autonomous response. Reach out to collaborate:
 
 *   **Engineering:** [engineer@resq.software](mailto:engineer@resq.software)
 *   **Partnerships:** [contact@resq.software](mailto:contact@resq.software)
 *   **X (Twitter):** [@ResQSoftware](https://x.com/ResQSoftware)
 *   **LinkedIn:** [resq-software](https://www.linkedin.com/company/resq-software/)
 
-This project is licensed under the **Apache License 2.0**.
+---
+<p align="center">This project is licensed under the <strong>Apache License 2.0</strong>.</p>
