@@ -1,34 +1,53 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/resq-software/.github/main/assets/banner.png" alt="resQ Banner" width="100%">
-</p>
+<div align="center">
 
-<h1 align="center">resQ</h1>
+<img src="https://raw.githubusercontent.com/resq-software/.github/main/assets/banner.png" alt="resQ Banner" width="100%">
 
-<p align="center">
-  <strong>Secure. Autonomous. Decentralized.</strong>
-</p>
+# resQ
 
-<p align="center">
-  resQ provides the operating protocols for autonomous drone swarms, ensuring coordination and safety when traditional infrastructure fails. Our mission is to deliver resilient, decentralized software for critical response and automated logistics.
-</p>
+**Secure. Autonomous. Decentralized.**
 
-<p align="center">
-  <a href="https://github.com/resq-software/resQ/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/resq-software/resQ?color=blue&style=flat-square" alt="License">
-  </a>
-  <a href="https://github.com/resq-software/resQ/stargazers">
-    <img src="https://img.shields.io/github/stars/resq-software/resQ?color=gold&style=flat-square" alt="Stars">
-  </a>
-</p>
+resQ provides the operating protocols for autonomous drone swarms, ensuring coordination and safety when traditional infrastructure fails. Our mission is to deliver resilient, decentralized software for critical response and automated logistics.
+
+[![License: Apache 2.0](https://img.shields.io/github/license/resq-software/resQ?color=blue&style=flat-square)](https://github.com/resq-software/resQ/blob/main/LICENSE)
+[![Stars](https://img.shields.io/github/stars/resq-software/resQ?color=gold&style=flat-square)](https://github.com/resq-software/resQ/stargazers)
+
+---
 
 ## 🏗️ Core Capabilities
-resQ is built on a **Simulation-First** philosophy, ensuring operational integrity through a distributed functional architecture:
+*Built on a Simulation-First philosophy for mission-critical reliability.*
 
-*   **Swarm Orchestration:** Real-time fleet management and decentralized coordination for infrastructure-denied environments.
-*   **Edge Perception:** High-performance on-device autonomy, including obstacle avoidance and real-time sensor fusion.
-*   **Predictive Intelligence:** Advanced data processing for disaster forecasting and path optimization.
-*   **Verifiable Trust:** Secure anchoring of mission data for immutable evidence, audit trails, and decentralized identity.
-*   **Digital Twin Framework:** High-fidelity virtual environments for pre-mission validation and large-scale stress testing.
+<table align="center">
+  <tr>
+    <td align="center" width="33%">
+      <br><strong>Swarm Orchestration</strong><br>
+      Real-time fleet management & decentralized coordination.
+    </td>
+    <td align="center" width="33%">
+      <br><strong>Edge Perception</strong><br>
+      High-performance on-device autonomy & sensor fusion.
+    </td>
+    <td align="center" width="33%">
+      <br><strong>Predictive Intelligence</strong><br>
+      Advanced forecasting & mission path optimization.
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <br><strong>Verifiable Trust</strong><br>
+      Immutable audit trails & decentralized mission identity.
+    </td>
+    <td align="center" width="33%">
+      <br><strong>Digital Twin Framework</strong><br>
+      Virtual validation & large-scale stress testing.
+    </td>
+    <td align="center" width="33%">
+      <br><strong>Operational Resilience</strong><br>
+      Designed for GPS-denied & low-bandwidth environments.
+    </td>
+  </tr>
+</table>
+
+---
 
 ## 📑 Project Resources
 
@@ -38,29 +57,37 @@ resQ is built on a **Simulation-First** philosophy, ensuring operational integri
 | **Presentation Slides** | Technical protocols and mission-critical workflows. | *In Progress* |
 | **Launch & Demo Video** | End-to-end mission simulation and dashboard walkthrough. | *In Progress* |
 
+---
+
 ## 🌐 Ecosystem Repositories
 
-### 🚢 Core Platform
-*   **[resQ Core](https://github.com/resq-software/resQ):** The primary engine for autonomous swarm management (Private).
-*   **[On-Chain Programs](https://github.com/resq-software/programs):** Solana-based trust layer for airspace and evidence attestation.
-*   **[Web Dashboard](https://github.com/resq-software/ui):** Modern operator interface for real-time fleet visualization.
+<details>
+<summary><b>Click to expand the resQ Repository Catalog</b></summary>
+<br>
 
-### 🧰 SDKs & Tooling
-*   **[resQ CLI](https://github.com/resq-software/cli):** Unified developer tooling and repository orchestration.
-*   **[.NET SDK](https://github.com/resq-software/dotnet-sdk):** Official packages for blockchain, storage, and simulation.
-*   **[MCP Server](https://github.com/resq-software/mcp):** Model Context Protocol server exposing capabilities to AI clients.
+| Category | Project | Description |
+| :--- | :--- | :--- |
+| **Core Platform** | [resQ Core](https://github.com/resq-software/resQ) | Primary swarm coordination engine (Private). |
+| | [On-Chain Programs](https://github.com/resq-software/programs) | Solana trust layer for airspace & evidence. |
+| | [Web Dashboard](https://github.com/resq-software/ui) | Real-time operator visualization interface. |
+| **SDKs & Tooling** | [resQ CLI](https://github.com/resq-software/cli) | Unified platform & repository orchestration. |
+| | [.NET SDK](https://github.com/resq-software/dotnet-sdk) | Official packages for blockchain & simulation. |
+| | [MCP Server](https://github.com/resq-software/mcp) | AI client capabilities via FastAPI. |
+| **Documentation** | [Documentation](https://github.com/resq-software/docs) | Technical guides & API references. |
+| | [Landing Page](https://github.com/resq-software/landing) | The official resQ marketing site. |
 
-### 📖 Documentation
-*   **[Documentation](https://github.com/resq-software/docs):** Technical guides, protocols, and API references.
-*   **[Landing Page](https://github.com/resq-software/landing):** The official resQ marketing site.
-
-## ✉️ Contact
-We are building the future of autonomous response. Reach out to collaborate:
-
-*   **Engineering:** [engineer@resq.software](mailto:engineer@resq.software)
-*   **Partnerships:** [contact@resq.software](mailto:contact@resq.software)
-*   **X (Twitter):** [@ResQSoftware](https://x.com/ResQSoftware)
-*   **LinkedIn:** [resq-software](https://www.linkedin.com/company/resq-software/)
+</details>
 
 ---
-<p align="center">This project is licensed under the <strong>Apache License 2.0</strong>.</p>
+
+## ✉️ Contact
+*We are building the future of autonomous response. Reach out to collaborate.*
+
+| [Engineering](mailto:engineer@resq.software) | [Partnerships](mailto:contact@resq.software) | [X (Twitter)](https://x.com/ResQSoftware) | [LinkedIn](https://www.linkedin.com/company/resq-software/) |
+| :---: | :---: | :---: | :---: |
+
+---
+
+This project is licensed under the **Apache License 2.0**.
+
+</div>
