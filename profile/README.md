@@ -8,8 +8,8 @@
 
 resQ provides the operating protocols for autonomous drone swarms, ensuring coordination and safety when traditional infrastructure fails. Our mission is to deliver resilient, decentralized software for critical response and automated logistics.
 
-[![License: Apache 2.0](https://img.shields.io/github/license/resq-software/resQ?color=blue&style=flat-square)](https://github.com/resq-software/resQ/blob/main/LICENSE)
-[![Stars](https://img.shields.io/github/stars/resq-software/resQ?color=gold&style=flat-square)](https://github.com/resq-software/resQ/stargazers)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=flat-square)](./LICENSE)
+[![Total Stars](https://img.shields.io/github/stars/resq-software.svg?color=gold&style=flat-square&label=Total%20Stars)](https://github.com/resq-software)
 
 ---
 
@@ -88,6 +88,10 @@ resQ provides the operating protocols for autonomous drone swarms, ensuring coor
 
 ---
 
-This project is licensed under the **Apache License 2.0**.
+## License
+
+Copyright 2026 ResQ
+
+Licensed under the [Apache License, Version 2.0](../LICENSE).
 
 </div>

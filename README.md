@@ -13,11 +13,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/resq-software/resQ/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/resq-software/resQ?color=blue&style=flat-square" alt="License">
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=flat-square" alt="License: Apache-2.0">
   </a>
-  <a href="https://github.com/resq-software/resQ/stargazers">
-    <img src="https://img.shields.io/github/stars/resq-software/resQ?color=gold&style=flat-square" alt="Stars">
+  <a href="https://github.com/resq-software">
+    <img src="https://img.shields.io/github/stars/resq-software.svg?color=gold&style=flat-square&label=Total%20Stars" alt="Total Stars">
   </a>
 </p>
 
@@ -30,3 +30,11 @@
 *   **Partnerships:** [contact@resq.software](mailto:contact@resq.software)
 *   **X (Twitter):** [@ResQSoftware](https://x.com/ResQSoftware)
 *   **LinkedIn:** [resq-software](https://www.linkedin.com/company/resq-software/)
+
+---
+
+## License
+
+Copyright 2026 ResQ
+
+Licensed under the [Apache License, Version 2.0](./LICENSE).
