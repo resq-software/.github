@@ -24,7 +24,7 @@ Whether managing a swarm of UAVs, ground-based sensor arrays, or humanitarian re
 resQ utilizes a decentralized agent-based architecture where each node functions as an autonomous peer within the swarm.
 
 ```mermaid
-c4Context
+C4Context
     title resQ Mesh Coordination Flow
     
     Person(missionControl, "Mission Control", "Operator overseeing regional logistics")
@@ -51,11 +51,10 @@ npm install @resq/core
 For edge deployments requiring native performance optimizations:
 
 ```bash
-# Clone the repository
 git clone https://github.com/resq-software/resq.git
 cd resq
-# Install native dependencies and build
-npm install && npm run build
+npm install
+npm run build
 ```
 
 ## Quick Start
@@ -113,16 +112,17 @@ The resQ API is structured around four primary domains:
 
 To contribute to the core engine:
 
-1. **Fork the repository** and create a feature branch.
-2. **Security Implementation:** All cryptographic primitives reside in `/lib/crypto`. Ensure all new protocols utilize `AES-256-GCM` with rotating hardware-backed keys.
-3. **Linting:** Run `npm run lint` before committing.
-4. **Testing:** All logic requires 90%+ code coverage. Run `npm test` to verify.
+1. **Setup:** Fork the repository and create a feature branch. Install dependencies via `npm install`.
+2. **Security Implementation:** All cryptographic primitives reside in `/lib/crypto`. New protocols must utilize `AES-256-GCM` with rotating hardware-backed keys.
+3. **Linting:** Run `npm run lint` to ensure code style compliance.
+4. **Testing:** All logic requires 90%+ code coverage. Run `npm test` to verify changes before submission.
 
 ## Contributing
 
 We welcome contributions from the global developer community. 
+- **Security Policy:** Report vulnerabilities to `security@resq.software`. Do not open public issues for security flaws.
+- **Code of Conduct:** All participants must adhere to the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
 - **Bug Reports:** Open an issue via the GitHub tracker.
-- **Feature Requests:** Use the "Proposal" label in the discussion section.
 - **Pull Requests:** Ensure all PRs are linked to a corresponding issue and include unit tests.
 
 ## License
