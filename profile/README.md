@@ -6,92 +6,85 @@
 
 **Secure. Autonomous. Decentralized.**
 
-resQ provides the operating protocols for autonomous drone swarms, ensuring coordination and safety when traditional infrastructure fails. Our mission is to deliver resilient, decentralized software for critical response and automated logistics.
+resQ builds the operating protocols for autonomous drone swarms — ensuring coordination and safety when traditional infrastructure fails. Our mission is resilient, decentralized software for critical disaster response and humanitarian logistics.
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=flat-square)](./LICENSE)
-[![Total Stars](https://img.shields.io/github/stars/resq-software.svg?color=gold&style=flat-square&label=Total%20Stars)](https://github.com/resq-software)
+[![GitHub Stars](https://img.shields.io/github/stars/resq-software.svg?color=gold&style=flat-square&label=Stars)](https://github.com/resq-software)
 
 ---
 
-## 🏗️ Core Capabilities
-*Built on a Simulation-First philosophy for mission-critical reliability.*
+## Platform
+
+*Built on a simulation-first methodology — verified in PX4 SITL and Gazebo before any hardware deployment.*
 
 <table align="center">
   <tr>
     <td align="center" width="33%">
       <br><strong>Swarm Orchestration</strong><br>
-      Real-time fleet management & decentralized coordination.
+      Real-time fleet management and decentralized mission coordination via the Hybrid Coordination Engine.
     </td>
     <td align="center" width="33%">
-      <br><strong>Edge Perception</strong><br>
-      High-performance on-device autonomy & sensor fusion.
+      <br><strong>Edge Autonomy</strong><br>
+      On-drone C++/ROS 2 logic for obstacle avoidance, sensor fusion, and GPS-denied navigation.
     </td>
     <td align="center" width="33%">
       <br><strong>Predictive Intelligence</strong><br>
-      Advanced forecasting & mission path optimization.
+      ML-powered disaster forecasting and RL-optimized deployment strategies.
     </td>
   </tr>
   <tr>
     <td align="center" width="33%">
       <br><strong>Verifiable Trust</strong><br>
-      Immutable audit trails & decentralized mission identity.
+      Immutable audit trails anchored on Neo N3 and Solana. Every mission, delivery, and crossing is on-chain.
     </td>
     <td align="center" width="33%">
-      <br><strong>Digital Twin Framework</strong><br>
-      Virtual validation & large-scale stress testing.
+      <br><strong>Digital Twin</strong><br>
+      High-fidelity physics simulation for stress-testing swarm strategies before deployment.
     </td>
     <td align="center" width="33%">
-      <br><strong>Operational Resilience</strong><br>
-      Designed for GPS-denied & low-bandwidth environments.
+      <br><strong>AI-Native Tooling</strong><br>
+      MCP server exposing platform capabilities directly to Claude, Cursor, and other AI clients.
     </td>
   </tr>
 </table>
 
 ---
 
-## 📑 Project Resources
+## Ecosystem
 
-| Resource | Description | Status |
+| Category | Repository | Description |
 | :--- | :--- | :--- |
-| **Architecture Overview** | Deep-dive into our decentralized multi-layered system. | **Live** |
-| **Presentation Slides** | Technical protocols and mission-critical workflows. | *In Progress* |
-| **Launch & Demo Video** | End-to-end mission simulation and dashboard walkthrough. | *In Progress* |
+| **Core Platform** | [resQ](https://github.com/resq-software/resQ) | Polyglot monorepo: HCE, PDIE, DTSOP, Infrastructure API, Edge AEAI, Web Dashboard |
+| | [programs](https://github.com/resq-software/programs) | Solana Anchor programs: airspace access control and proof-of-delivery |
+| **SDKs & Tooling** | [dotnet-sdk](https://github.com/resq-software/dotnet-sdk) | .NET 9 clients for ResQ APIs, Neo N3 anchoring, and simulation harnesses |
+| | [mcp](https://github.com/resq-software/mcp) | FastMCP server: drone fleet, simulations, and incident response for AI agents |
+| | [cli](https://github.com/resq-software/cli) | Rust CLI/TUI: audit, health diagnostics, log aggregation, deployment orchestration |
+| | [ui](https://github.com/resq-software/ui) | React component library — 55+ typed, tree-shakeable components on Radix UI + Tailwind v4 |
+| **Infrastructure** | [resq-proto](https://github.com/resq-software/resq-proto) | Canonical Protobuf schemas published to the Buf Schema Registry |
+| | [dev](https://github.com/resq-software/dev) | One-command developer onboarding across the full ResQ stack |
+| **Content** | [landing](https://github.com/resq-software/landing) | Marketing site — Next.js 15, Tailwind CSS, deployed on Cloudflare Pages |
+| | [docs](https://github.com/resq-software/docs) | Official documentation — Mintlify with API references and guides |
 
 ---
 
-## 🌐 Ecosystem Repositories
+## Get Started
 
-<details>
-<summary><b>Click to expand the resQ Repository Catalog</b></summary>
-<br>
+```bash
+# Set up your local environment in one command
+curl -fsSL https://raw.githubusercontent.com/resq-software/dev/main/install.sh | sh
+```
 
-| Category | Project | Description |
-| :--- | :--- | :--- |
-| **Core Platform** | [resQ Core](https://github.com/resq-software/resQ) | Primary swarm coordination engine (Private). |
-| | [On-Chain Programs](https://github.com/resq-software/programs) | Solana trust layer for airspace & evidence. |
-| | [Web Dashboard](https://github.com/resq-software/ui) | Real-time operator visualization interface. |
-| **SDKs & Tooling** | [resQ CLI](https://github.com/resq-software/cli) | Unified platform & repository orchestration. |
-| | [.NET SDK](https://github.com/resq-software/dotnet-sdk) | Official packages for blockchain & simulation. |
-| | [MCP Server](https://github.com/resq-software/mcp) | AI client capabilities via FastAPI. |
-| **Documentation** | [Documentation](https://github.com/resq-software/docs) | Technical guides & API references. |
-| | [Landing Page](https://github.com/resq-software/landing) | The official resQ marketing site. |
-
-</details>
+Installs git, gh CLI, Nix, clones your chosen repo, and configures pre-commit hooks automatically.
 
 ---
 
-## ✉️ Contact
-*We are building the future of autonomous response. Reach out to collaborate.*
+## Contact
 
-| [Engineering](mailto:engineer@resq.software) | [Partnerships](mailto:contact@resq.software) | [X (Twitter)](https://x.com/ResQSoftware) | [LinkedIn](https://www.linkedin.com/company/resq-software/) |
+| [Engineering](mailto:engineer@resq.software) | [Partnerships](mailto:contact@resq.software) | [X / Twitter](https://x.com/ResQSoftware) | [LinkedIn](https://www.linkedin.com/company/resq-software/) |
 | :---: | :---: | :---: | :---: |
 
 ---
 
-## License
-
-Copyright 2026 ResQ
-
-Licensed under the [Apache License, Version 2.0](../LICENSE).
+Copyright 2026 ResQ — [Apache License 2.0](../LICENSE)
 
 </div>
