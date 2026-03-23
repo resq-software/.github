@@ -69,9 +69,16 @@ resQ builds the operating protocols for autonomous drone swarms — ensuring coo
 
 ## Get Started
 
+**macOS / Linux:**
+
 ```bash
-# Set up your local environment in one command
 curl -fsSL https://raw.githubusercontent.com/resq-software/dev/main/install.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/resq-software/dev/main/install.ps1 | iex
 ```
 
 Installs git, gh CLI, Nix, clones your chosen repo, and configures pre-commit hooks automatically.
