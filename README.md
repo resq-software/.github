@@ -1,5 +1,7 @@
 # resq-software/.github
 
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
+
 Organization-wide community health files, issue/PR templates, and the public profile for [resq-software](https://github.com/resq-software).
 
 ## What's in This Repo
