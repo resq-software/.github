@@ -1,97 +1,32 @@
 <div align="center">
+  <h2>resq-software</h2>
+  <p>Resilient infrastructure for autonomous systems when traditional networks fail.</p>
+  <br/>
 
-<img src="https://raw.githubusercontent.com/resq-software/.github/main/assets/banner.png" alt="resQ Banner" width="100%">
-
-# resQ
-
-**Secure. Autonomous. Decentralized.**
-
-resQ builds the operating protocols for autonomous drone swarms — ensuring coordination and safety when traditional infrastructure fails. Our mission is resilient, decentralized software for critical disaster response and humanitarian logistics.
-
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=flat-square)](./LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/resq-software.svg?color=gold&style=flat-square&label=Stars)](https://github.com/resq-software)
+  [![Docs](https://img.shields.io/badge/docs-docs.resq.software-0ea5e9?style=flat-square)](https://docs.resq.software)
+  [![Website](https://img.shields.io/badge/site-resq.software-0ea5e9?style=flat-square)](https://resq.software)
+  [![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](https://github.com/resq-software/.github/blob/main/LICENSE)
+</div>
 
 ---
 
-## Platform
-
-*Built on a simulation-first methodology — verified in PX4 SITL and Gazebo before any hardware deployment.*
-
-<table align="center">
-  <tr>
-    <td align="center" width="33%">
-      <br><strong>Swarm Orchestration</strong><br>
-      Real-time fleet management and decentralized mission coordination via the Hybrid Coordination Engine.
-    </td>
-    <td align="center" width="33%">
-      <br><strong>Edge Autonomy</strong><br>
-      On-drone C++/ROS 2 logic for obstacle avoidance, sensor fusion, and GPS-denied navigation.
-    </td>
-    <td align="center" width="33%">
-      <br><strong>Predictive Intelligence</strong><br>
-      ML-powered disaster forecasting and RL-optimized deployment strategies.
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="33%">
-      <br><strong>Verifiable Trust</strong><br>
-      Immutable audit trails anchored on Neo N3 and Solana. Every mission, delivery, and crossing is on-chain.
-    </td>
-    <td align="center" width="33%">
-      <br><strong>Digital Twin</strong><br>
-      High-fidelity physics simulation for stress-testing swarm strategies before deployment.
-    </td>
-    <td align="center" width="33%">
-      <br><strong>AI-Native Tooling</strong><br>
-      MCP server exposing platform capabilities directly to Claude, Cursor, and other AI clients.
-    </td>
-  </tr>
-</table>
-
----
+ResQ is a mission-critical autonomous platform for decentralized coordination in disaster response and emergency logistics — designed to operate when traditional networks fail.
 
 ## Ecosystem
 
-| Category | Repository | Description |
-| :--- | :--- | :--- |
-| **Core Platform** | [resQ](https://github.com/resq-software/resQ) | Polyglot monorepo: HCE, PDIE, DTSOP, Infrastructure API, Edge AEAI, Web Dashboard |
-| | [programs](https://github.com/resq-software/programs) | Solana Anchor programs: airspace access control and proof-of-delivery |
-| **SDKs & Tooling** | [dotnet-sdk](https://github.com/resq-software/dotnet-sdk) | .NET 9 clients for ResQ APIs, Neo N3 anchoring, and simulation harnesses |
-| | [mcp](https://github.com/resq-software/mcp) | FastMCP server: drone fleet, simulations, and incident response for AI agents |
-| | [cli](https://github.com/resq-software/cli) | Rust CLI/TUI: audit, health diagnostics, log aggregation, deployment orchestration |
-| | [ui](https://github.com/resq-software/ui) | React component library — 55+ typed, tree-shakeable components on Radix UI + Tailwind v4 |
-| **Infrastructure** | [resq-proto](https://github.com/resq-software/resq-proto) | Canonical Protobuf schemas published to the Buf Schema Registry |
-| | [dev](https://github.com/resq-software/dev) | One-command developer onboarding across the full ResQ stack |
-| **Content** | [landing](https://github.com/resq-software/landing) | Marketing site — Next.js 15, Tailwind CSS, deployed on Cloudflare Pages |
-| | [docs](https://github.com/resq-software/docs) | Official documentation — Mintlify with API references and guides |
+| Repository | What it is | Language |
+|-----------|-----------|----------|
+| resQ *(private)* | Core polyglot monorepo | Rust · TypeScript · Python · C++ · C# |
+| [npm](https://github.com/resq-software/npm) | React component library (shadcn/ui + Radix + Tailwind v4) | TypeScript |
+| [crates](https://github.com/resq-software/crates) | Rust CLI/TUI toolset for drone ops | Rust |
+| [pypi](https://github.com/resq-software/pypi) | FastMCP server + DSA utilities | Python |
+| [dotnet-sdk](https://github.com/resq-software/dotnet-sdk) | .NET typed clients + blockchain anchoring | C# |
+| [programs](https://github.com/resq-software/programs) | Solana Anchor on-chain programs | Rust |
+| [vcpkg](https://github.com/resq-software/vcpkg) | C++ vcpkg libraries | C++ |
+| [landing](https://github.com/resq-software/landing) | Marketing & product site | Next.js |
+| [docs](https://github.com/resq-software/docs) | Documentation (Mintlify) | MDX |
+| [dev](https://github.com/resq-software/dev) | One-command developer setup | Shell |
 
----
+## Links
 
-## Get Started
-
-**macOS / Linux:**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/resq-software/dev/main/install.sh | sh
-```
-
-**Windows (PowerShell):**
-
-```powershell
-irm https://raw.githubusercontent.com/resq-software/dev/main/install.ps1 | iex
-```
-
-Installs git, gh CLI, Nix, clones your chosen repo, and configures pre-commit hooks automatically.
-
----
-
-## Contact
-
-| [Engineering](mailto:engineer@resq.software) | [Partnerships](mailto:contact@resq.software) | [X / Twitter](https://x.com/ResQSoftware) | [LinkedIn](https://www.linkedin.com/company/resq-software/) |
-| :---: | :---: | :---: | :---: |
-
----
-
-Copyright 2026 ResQ — [Apache License 2.0](../LICENSE)
-
-</div>
+[📖 Docs](https://docs.resq.software) · [🌐 Website](https://resq.software) · [🤝 Contributing](https://github.com/resq-software/.github/blob/main/CONTRIBUTING.md)
