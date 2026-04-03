@@ -53,7 +53,6 @@ The template auto-populates with:
 
 | Repo | Role |
 | :--- | :--- |
-| [resQ](https://github.com/resq-software/resQ) | Core polyglot monorepo (private) |
 | [dotnet-sdk](https://github.com/resq-software/dotnet-sdk) | .NET 9 client libraries |
 | [mcp](https://github.com/resq-software/mcp) | FastMCP server for AI clients |
 | [cli](https://github.com/resq-software/cli) | Rust CLI/TUI toolchain |
