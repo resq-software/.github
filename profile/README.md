@@ -16,7 +16,6 @@ ResQ is a mission-critical autonomous platform for decentralized coordination in
 
 | Repository | What it is | Language |
 |-----------|-----------|----------|
-| resQ *(private)* | Core polyglot monorepo | Rust · TypeScript · Python · C++ · C# |
 | [npm](https://github.com/resq-software/npm) | React component library (shadcn/ui + Radix + Tailwind v4) | TypeScript |
 | [crates](https://github.com/resq-software/crates) | Rust CLI/TUI toolset for drone ops | Rust |
 | [pypi](https://github.com/resq-software/pypi) | FastMCP server + DSA utilities | Python |
