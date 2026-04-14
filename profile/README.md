@@ -17,14 +17,27 @@ ResQ is a mission-critical autonomous platform for decentralized coordination in
 | Repository | What it is | Language |
 |-----------|-----------|----------|
 | [npm](https://github.com/resq-software/npm) | React component library (shadcn/ui + Radix + Tailwind v4) | TypeScript |
-| [crates](https://github.com/resq-software/crates) | Rust CLI/TUI toolset for drone ops | Rust |
+| [crates](https://github.com/resq-software/crates) | Rust CLI/TUI toolset for drone ops (ships the `resq` binary) | Rust |
 | [pypi](https://github.com/resq-software/pypi) | FastMCP server + DSA utilities | Python |
 | [dotnet-sdk](https://github.com/resq-software/dotnet-sdk) | .NET typed clients + blockchain anchoring | C# |
 | [programs](https://github.com/resq-software/programs) | Solana Anchor on-chain programs | Rust |
 | [vcpkg](https://github.com/resq-software/vcpkg) | C++ vcpkg libraries | C++ |
+| [viz](https://github.com/resq-software/viz) | .NET visualization library | C# |
 | [landing](https://github.com/resq-software/landing) | Marketing & product site | Next.js |
 | [docs](https://github.com/resq-software/docs) | Documentation (Mintlify) | MDX |
-| [dev](https://github.com/resq-software/dev) | One-command developer setup | Shell |
+| [dev](https://github.com/resq-software/dev) | One-command developer setup + canonical git hooks | Shell |
+
+## Get started
+
+Install the `resq` CLI and onboard a cloned repo in two curls:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/resq-software/dev/main/scripts/install-resq.sh | sh
+cd <any resq repo>
+curl -fsSL https://raw.githubusercontent.com/resq-software/dev/main/scripts/install-hooks.sh | sh
+```
+
+The first installs a SHA-verified `resq` binary (with a `cargo install --git` fallback). The second drops the canonical git hooks — copyright, secrets, polyglot format, audit — into the repo and offers a repo-aware `local-pre-push` scaffold.
 
 ## Links
 
