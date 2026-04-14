@@ -1,0 +1,132 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reusable security scan — callable from any resq-software/* repo with a
+# thin 6-line wrapper (see .github/workflows/README.md in this repo).
+#
+# Jobs (all conditional on inputs):
+#   codeql              matrix per language; skip for repos with no code
+#   gitleaks            secret scanning
+#   osv-scanner         dependency vulnerability scanning (Google)
+#   dependency-review   PR-only; flags disallowed licenses / known CVEs
+#   snyk                opt-in; requires SNYK_TOKEN repo secret
+
+name: security-scan
+
+on:
+  workflow_call:
+    inputs:
+      languages:
+        description: >
+          JSON array of CodeQL languages (e.g. '["python","javascript-typescript"]').
+          Pass an empty array '[]' or omit to skip CodeQL entirely.
+          Valid members: actions, c-cpp, csharp, go, java-kotlin, javascript-typescript, python, ruby, swift.
+        type: string
+        required: false
+        default: "[]"
+      enable-gitleaks:
+        type: boolean
+        required: false
+        default: true
+      enable-osv:
+        type: boolean
+        required: false
+        default: true
+      enable-dependency-review:
+        type: boolean
+        required: false
+        default: true
+      enable-snyk:
+        description: Requires SNYK_TOKEN repo secret to be set.
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+  security-events: write   # for CodeQL + SARIF uploads
+  pull-requests: read      # for dependency-review
+
+jobs:
+  # ── CodeQL ────────────────────────────────────────────────────────────────
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    if: ${{ inputs.languages != '' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(format('[{0}]', join(split(inputs.languages, ','), ','))) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  # ── Gitleaks ──────────────────────────────────────────────────────────────
+  gitleaks:
+    name: gitleaks
+    if: ${{ inputs.enable-gitleaks }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so gitleaks can scan all commits
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Free on public repos without a license key; require one for private.
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  # ── OSV-Scanner ───────────────────────────────────────────────────────────
+  osv-scanner:
+    name: osv-scanner
+    if: ${{ inputs.enable-osv }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run OSV-Scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v2
+        with:
+          scan-args: |-
+            --recursive
+            --skip-git
+            ./
+        continue-on-error: false
+
+  # ── Dependency Review (PR only) ───────────────────────────────────────────
+  dependency-review:
+    name: dependency-review
+    if: ${{ inputs.enable-dependency-review && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  # ── Snyk (opt-in) ─────────────────────────────────────────────────────────
+  snyk:
+    name: snyk
+    if: ${{ inputs.enable-snyk }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Snyk (best-effort across detected manifests)
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      - name: Upload Snyk SARIF (when available)
+        if: always() && hashFiles('snyk.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snyk.sarif
