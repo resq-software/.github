@@ -133,14 +133,14 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00  # v6
+        with:
+          go-version: "1.23"
       - name: Install + run OSV-Scanner
-        env:
-          OSV_VERSION: "2.3.5"
         run: |
           set -euxo pipefail
-          curl -fsSL "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_linux_amd64" -o /tmp/osv-scanner
-          chmod +x /tmp/osv-scanner
-          /tmp/osv-scanner --recursive --skip-git ./
+          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.3.5
+          "$(go env GOPATH)/bin/osv-scanner" --recursive --skip-git ./
 
   # ── Dependency Review (PR only) ───────────────────────────────────────────
   dependency-review:
