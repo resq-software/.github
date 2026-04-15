@@ -32,9 +32,12 @@ on:
         required: false
         default: "[]"
       enable-gitleaks:
+        description: >
+          Requires GITLEAKS_LICENSE (even for public org repos). Off by default —
+          GitHub's native secret scanning + push protection cover public repos.
         type: boolean
         required: false
-        default: true
+        default: false
       enable-osv:
         type: boolean
         required: false
@@ -123,13 +126,14 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - name: Install OSV-Scanner
+        env:
+          OSV_VERSION: "2.3.5"
+        run: |
+          curl -fsSL "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_linux_amd64" -o osv-scanner
+          chmod +x osv-scanner
       - name: Run OSV-Scanner
-        uses: google/osv-scanner-action/osv-scanner-action@c51854704019a247608d928f370c98740469d4b5  # v2.3.5
-        with:
-          scan-args: |-
-            --recursive
-            --skip-git
-            ./
+        run: ./osv-scanner --recursive --skip-git ./
 
   # ── Dependency Review (PR only) ───────────────────────────────────────────
   dependency-review:
