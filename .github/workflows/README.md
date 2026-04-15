@@ -14,7 +14,7 @@ with a trailing `# <tag>` comment so Dependabot can still propose updates.
 | :-- | :-- | :-- |
 | `harden-runner` (first step in every job) | Audit/block runner egress — defense vs hijacked actions (tj-actions-class) | `audit` |
 | `codeql` | SAST per language | opt-in via `languages` |
-| `gitleaks` | Git history secret scan | on |
+| `gitleaks` | Git history secret scan; requires `GITLEAKS_LICENSE` even on public org repos | off |
 | `osv-scanner` | Dependency vuln scan (Google OSV) | on |
 | `dependency-review` | PR-only; blocks high-severity CVEs | on |
 | `zizmor` | Static audit of `.github/workflows/**` for security anti-patterns | on |
@@ -45,7 +45,7 @@ jobs:
 | Input | Type | Default | Notes |
 | :-- | :-- | :-- | :-- |
 | `languages` | string (JSON array) | `"[]"` | CodeQL languages. Omit/empty to skip CodeQL. Valid: `actions`, `c-cpp`, `csharp`, `go`, `java-kotlin`, `javascript-typescript`, `python`, `ruby`, `swift`. |
-| `enable-gitleaks` | bool | `true` | |
+| `enable-gitleaks` | bool | `false` | Requires `GITLEAKS_LICENSE` repo/org secret even on public repos owned by an org. GitHub's native secret scanning + push protection cover most use cases. |
 | `enable-osv` | bool | `true` | |
 | `enable-dependency-review` | bool | `true` | PR runs only. |
 | `enable-zizmor` | bool | `true` | |
