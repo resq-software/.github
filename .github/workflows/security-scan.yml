@@ -140,7 +140,7 @@ jobs:
         run: |
           set -euxo pipefail
           go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.3.5
-          "$(go env GOPATH)/bin/osv-scanner" --recursive --skip-git ./
+          "$(go env GOPATH)/bin/osv-scanner" scan source --recursive ./
 
   # ── Dependency Review (PR only) ───────────────────────────────────────────
   dependency-review:
