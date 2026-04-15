@@ -140,7 +140,16 @@ jobs:
         run: |
           set -euxo pipefail
           go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.3.5
-          "$(go env GOPATH)/bin/osv-scanner" scan source --recursive ./
+          # Exit 128 from osv-scanner = "no package sources found"; treat as
+          # success for scripts-only / manifest-free repos.
+          "$(go env GOPATH)/bin/osv-scanner" scan source --recursive ./ || {
+            rc=$?
+            if [ "$rc" -eq 128 ]; then
+              echo "osv-scanner: no package sources in this repo — skipping."
+              exit 0
+            fi
+            exit "$rc"
+          }
 
   # ── Dependency Review (PR only) ───────────────────────────────────────────
   dependency-review:
