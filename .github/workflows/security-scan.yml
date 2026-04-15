@@ -72,6 +72,12 @@ permissions:
 
 jobs:
   # ── CodeQL ────────────────────────────────────────────────────────────────
+  # CodeQL is handled by GitHub's repo-level "default setup" (Settings →
+  # Code security → CodeQL analysis). Running a matrix job here conflicts
+  # with default setup ("analyses from advanced configurations cannot be
+  # processed when the default setup is enabled") — so the job is a no-op
+  # unless `languages` is explicitly set AND the caller has disabled
+  # default setup in repo settings.
   codeql:
     name: CodeQL (${{ matrix.language }})
     if: ${{ inputs.languages != '' && inputs.languages != '[]' }}
@@ -96,6 +102,7 @@ jobs:
         uses: github/codeql-action/analyze@5c8a8a642e79153f5d047b10ec1cba1d1cc65699  # v3
         with:
           category: "/language:${{ matrix.language }}"
+        continue-on-error: true   # default-setup collision otherwise fails
 
   # ── Gitleaks ──────────────────────────────────────────────────────────────
   gitleaks:
@@ -126,14 +133,14 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
-      - name: Install OSV-Scanner
+      - name: Install + run OSV-Scanner
         env:
           OSV_VERSION: "2.3.5"
         run: |
-          curl -fsSL "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_linux_amd64" -o osv-scanner
-          chmod +x osv-scanner
-      - name: Run OSV-Scanner
-        run: ./osv-scanner --recursive --skip-git ./
+          set -euxo pipefail
+          curl -fsSL "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_linux_amd64" -o /tmp/osv-scanner
+          chmod +x /tmp/osv-scanner
+          /tmp/osv-scanner --recursive --skip-git ./
 
   # ── Dependency Review (PR only) ───────────────────────────────────────────
   dependency-review:
