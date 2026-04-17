@@ -4,6 +4,10 @@
 # Reusable Node/TypeScript CI — supports bun (default), npm, pnpm, yarn.
 # Generic; doesn't enforce a specific test framework or linter. Pairs
 # with security-scan.yml. SHA-pinned actions with trailing `# <tag>`.
+#
+# Security: all workflow_call inputs that reach `run:` are forwarded
+# through `env:` and referenced as `"$VAR"` to prevent template-time
+# expansion of potentially caller-controlled strings into the shell.
 
 name: node-ci
 
@@ -28,27 +32,23 @@ on:
         required: false
         default: "."
       install-cmd:
-        description: Override install command. Empty = pm default (e.g., `bun install`).
+        description: Override install command. Empty = pm default.
         type: string
         required: false
         default: ""
       lint-cmd:
-        description: Lint script (empty to skip).
         type: string
         required: false
         default: ""
       typecheck-cmd:
-        description: Typecheck script (empty to skip).
         type: string
         required: false
         default: ""
       test-cmd:
-        description: Test script (empty to skip).
         type: string
         required: false
         default: ""
       build-cmd:
-        description: Build script (empty to skip).
         type: string
         required: false
         default: ""
@@ -76,6 +76,13 @@ jobs:
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
+      # pnpm MUST be installed before setup-node when cache: 'pnpm' is used,
+      # because setup-node's pnpm cache detection resolves the pnpm binary.
+      - if: ${{ inputs.package-manager == 'pnpm' }}
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda  # v4
+        with:
+          run_install: false
+
       - if: ${{ inputs.package-manager == 'bun' }}
         uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76  # v2
         with:
@@ -87,36 +94,44 @@ jobs:
           node-version: ${{ inputs.node-version }}
           cache: ${{ inputs.package-manager == 'yarn' && 'yarn' || inputs.package-manager == 'pnpm' && 'pnpm' || 'npm' }}
 
-      - if: ${{ inputs.package-manager == 'pnpm' }}
-        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda  # v4
-        with:
-          run_install: false
-
       - name: Install
+        env:
+          PM: ${{ inputs.package-manager }}
+          INSTALL_CMD: ${{ inputs.install-cmd }}
         run: |
-          if [ -n "${{ inputs.install-cmd }}" ]; then
-            ${{ inputs.install-cmd }}
+          set -eu
+          if [ -n "$INSTALL_CMD" ]; then
+            sh -c "$INSTALL_CMD"
           else
-            case "${{ inputs.package-manager }}" in
+            case "$PM" in
               bun)   bun install --frozen-lockfile ;;
               npm)   npm ci ;;
               pnpm)  pnpm install --frozen-lockfile ;;
               yarn)  yarn install --immutable ;;
+              *)     echo "::error::Unknown package-manager: $PM" >&2; exit 2 ;;
             esac
           fi
 
       - if: ${{ inputs.lint-cmd != '' }}
         name: Lint
-        run: ${{ inputs.lint-cmd }}
+        env:
+          CMD: ${{ inputs.lint-cmd }}
+        run: sh -c "$CMD"
 
       - if: ${{ inputs.typecheck-cmd != '' }}
         name: Typecheck
-        run: ${{ inputs.typecheck-cmd }}
+        env:
+          CMD: ${{ inputs.typecheck-cmd }}
+        run: sh -c "$CMD"
 
       - if: ${{ inputs.build-cmd != '' }}
         name: Build
-        run: ${{ inputs.build-cmd }}
+        env:
+          CMD: ${{ inputs.build-cmd }}
+        run: sh -c "$CMD"
 
       - if: ${{ inputs.test-cmd != '' }}
         name: Test
-        run: ${{ inputs.test-cmd }}
+        env:
+          CMD: ${{ inputs.test-cmd }}
+        run: sh -c "$CMD"

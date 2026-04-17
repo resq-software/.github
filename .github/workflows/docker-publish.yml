@@ -4,9 +4,11 @@
 # Reusable container build + publish + provenance workflow.
 # Builds via buildx, pushes to ghcr.io by default, and produces
 # an SLSA build-provenance attestation (sigstore-backed) for the
-# image digest. Callable from any resq-software/* repo.
+# image digest.
 #
-# SHA-pinned actions with trailing `# <tag>` for Dependabot.
+# Security: caller-controlled path inputs are forwarded through
+# `env:` (the build action itself accepts them as `with:` parameters,
+# which is safe — but the ref passthrough is constrained via env).
 
 name: docker-publish
 
@@ -22,29 +24,22 @@ on:
         required: false
         default: "ghcr.io"
       context:
-        description: Docker build context path.
         type: string
         required: false
         default: "."
       dockerfile:
-        description: Path to Dockerfile relative to repo root.
         type: string
         required: false
         default: "Dockerfile"
       platforms:
-        description: Comma-separated target platforms.
         type: string
         required: false
         default: "linux/amd64,linux/arm64"
       tags:
-        description: |
-          Newline-separated image tags to push (full refs). Example:
-            ghcr.io/resq-software/mcp:latest
-            ghcr.io/resq-software/mcp:${{ version }}
+        description: Newline-separated image tags to push (full refs).
         type: string
         required: true
       build-args:
-        description: Newline-separated docker build args (KEY=VALUE).
         type: string
         required: false
         default: ""
@@ -53,7 +48,7 @@ on:
         required: false
         default: true
       attest:
-        description: Emit SLSA build-provenance attestation.
+        description: Emit SLSA build-provenance attestation (only runs when push is true).
         type: boolean
         required: false
         default: true
@@ -64,7 +59,11 @@ on:
         default: ""
     outputs:
       image-digest:
-        description: sha256 digest of the pushed image manifest.
+        description: >
+          sha256 digest of the pushed image manifest. Populated ONLY when
+          `push: true` — the underlying docker/build-push-action emits
+          digest only for pushed images. Will be empty string if push was
+          skipped.
         value: ${{ jobs.publish.outputs.digest }}
 
 permissions:
@@ -77,9 +76,9 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      packages: write        # push to GHCR
-      id-token: write        # OIDC for keyless sigstore signing
-      attestations: write    # actions/attest-build-provenance
+      packages: write
+      id-token: write
+      attestations: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:

@@ -2,8 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Reusable C++ CI — CMake configure + build + test. Matrix over OS.
-# Callable from any resq-software/* repo. Pairs with security-scan.yml.
-# SHA-pinned actions with trailing `# <tag>`.
+# Pairs with security-scan.yml.
+#
+# Security: caller-controlled path/flag inputs are forwarded through
+# `env:` and referenced as `"$VAR"` to prevent shell injection.
 
 name: cpp-ci
 
@@ -11,12 +13,10 @@ on:
   workflow_call:
     inputs:
       os-list:
-        description: JSON array of runner OS labels.
         type: string
         required: false
         default: '["ubuntu-latest","macos-latest","windows-latest"]'
       source-dir:
-        description: Path containing CMakeLists.txt (or subproject path).
         type: string
         required: false
         default: "."
@@ -25,7 +25,6 @@ on:
         required: false
         default: "build"
       cmake-flags:
-        description: Extra flags passed to `cmake -B <build-dir>`.
         type: string
         required: false
         default: ""
@@ -62,9 +61,22 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - name: Configure
-        run: cmake -B ${{ inputs.build-dir }} ${{ inputs.cmake-flags }} ${{ inputs.source-dir }}
+        shell: bash
+        env:
+          SRC: ${{ inputs.source-dir }}
+          BUILD: ${{ inputs.build-dir }}
+          FLAGS: ${{ inputs.cmake-flags }}
+        run: cmake -B "$BUILD" $FLAGS "$SRC"
       - name: Build
-        run: cmake --build ${{ inputs.build-dir }} --config ${{ inputs.build-config }}
+        shell: bash
+        env:
+          BUILD: ${{ inputs.build-dir }}
+          CONFIG: ${{ inputs.build-config }}
+        run: cmake --build "$BUILD" --config "$CONFIG"
       - if: ${{ inputs.run-test }}
         name: Test
-        run: ctest --test-dir ${{ inputs.build-dir }} --output-on-failure -C ${{ inputs.build-config }}
+        shell: bash
+        env:
+          BUILD: ${{ inputs.build-dir }}
+          CONFIG: ${{ inputs.build-config }}
+        run: ctest --test-dir "$BUILD" --output-on-failure -C "$CONFIG"

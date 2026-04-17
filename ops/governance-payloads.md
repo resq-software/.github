@@ -207,8 +207,11 @@ gh api /repos/resq-software/pypi/rules/branches/main
 # List with IDs
 gh api /orgs/resq-software/rulesets --jq '.[] | {id, name, enforcement}'
 
-# Soft-disable
-gh api --method PUT /orgs/resq-software/rulesets/<id> -f enforcement=disabled
+# Soft-disable: PUT replaces the entire ruleset resource, so fetch the
+# existing body, toggle `enforcement`, and re-submit the full object.
+gh api /orgs/resq-software/rulesets/<id> \
+  | jq '.enforcement = "disabled"' \
+  | gh api --method PUT /orgs/resq-software/rulesets/<id> --input -
 
 # Hard delete
 gh api --method DELETE /orgs/resq-software/rulesets/<id>

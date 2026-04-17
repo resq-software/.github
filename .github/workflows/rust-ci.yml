@@ -1,10 +1,10 @@
 # Copyright 2026 ResQ Software
 # SPDX-License-Identifier: Apache-2.0
 #
-# Reusable Rust CI — callable from any resq-software/* repo.
-# Pairs with security-scan.yml (which should run alongside this in
-# consumer repos). SHA-pinned actions with trailing `# <tag>` so
-# Dependabot can still propose updates.
+# Reusable Rust CI — fmt + clippy + test (opt coverage) + cargo-deny.
+# Pairs with security-scan.yml. SHA-pinned actions with trailing `# <tag>`.
+#
+# Security: caller-controlled string flags are forwarded through `env:`.
 
 name: rust-ci
 
@@ -12,17 +12,14 @@ on:
   workflow_call:
     inputs:
       toolchain:
-        description: Rust toolchain (stable|nightly|1.83.0|etc).
         type: string
         required: false
         default: stable
       components:
-        description: Comma-separated rustup components.
         type: string
         required: false
         default: rustfmt,clippy
       working-directory:
-        description: Cargo workspace root (defaults to repo root).
         type: string
         required: false
         default: "."
@@ -39,22 +36,18 @@ on:
         required: false
         default: true
       run-deny:
-        description: Run cargo-deny (requires deny.toml in working-directory).
         type: boolean
         required: false
         default: false
       run-coverage:
-        description: Run cargo-llvm-cov and upload to Codecov.
         type: boolean
         required: false
         default: false
       clippy-flags:
-        description: Extra flags passed to cargo clippy.
         type: string
         required: false
         default: "--all-targets --all-features -- -D warnings"
       test-flags:
-        description: Extra flags passed to cargo test.
         type: string
         required: false
         default: "--all-features --workspace"
@@ -106,7 +99,10 @@ jobs:
           toolchain: ${{ inputs.toolchain }}
           components: ${{ inputs.components }}
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
-      - run: cargo clippy ${{ inputs.clippy-flags }}
+      - name: cargo clippy
+        env:
+          FLAGS: ${{ inputs.clippy-flags }}
+        run: sh -c "cargo clippy $FLAGS"
 
   test:
     if: ${{ inputs.run-test }}
@@ -128,7 +124,10 @@ jobs:
           components: ${{ inputs.components }}
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
       - if: ${{ !inputs.run-coverage }}
-        run: cargo test ${{ inputs.test-flags }}
+        name: cargo test
+        env:
+          FLAGS: ${{ inputs.test-flags }}
+        run: sh -c "cargo test $FLAGS"
       - if: ${{ inputs.run-coverage }}
         uses: taiki-e/install-action@a416ddeedbd748e9e3f037655f22dc2ee45c17ae  # cargo-llvm-cov
         with:
