@@ -1,50 +1,59 @@
 # Governance payloads
 
-API payloads for custom repository properties and org rulesets. Apply via
-`gh api` after review. Order: **properties → values → rulesets** (rulesets
-reference property values, so properties must be defined first).
+API payloads for custom repository properties and org rulesets. The
+four JSON files in this directory are the direct `gh api --input`
+inputs; this document explains *why* each one is shaped the way it
+is. Apply order: **properties → values → rulesets**.
 
-> **Warning.** Ruleset A enforces `require_code_owner_review`. Any repo
-> without `CODEOWNERS` will block every PR until one lands. `resq-proto`
-> currently lacks `CODEOWNERS` — either ship one or exclude `resq-proto`
-> from Ruleset A's `conditions.repository_name` during a bake period.
+Files in this directory:
+
+```text
+ops/
+  properties-schema.json      # schema for domain/tier/lang
+  properties-values.json      # per-repo assignments (wrapper shape; see §2)
+  ruleset-a-baseline.json     # default-branch-baseline ruleset
+  ruleset-b-critical.json     # critical-tier-extras ruleset
+  governance-payloads.md      # this document
+```
 
 ---
 
-## 1. Custom property schema
+## Pre-flight checklist — do these BEFORE flipping rulesets to `active`
 
-Endpoint: `PATCH /orgs/resq-software/properties/schema` with body:
+Ruleset A enforces `require_code_owner_review`. A repo without
+`CODEOWNERS` will block every PR on ruleset activation, because there
+is no code owner to approve. The recommended rollout:
 
-```json
-{
-  "properties": [
-    {
-      "property_name": "domain",
-      "value_type": "single_select",
-      "required": true,
-      "default_value": "tooling",
-      "description": "What the repo serves.",
-      "allowed_values": ["drone", "backend", "frontend", "sdk", "ops", "infra", "tooling"]
-    },
-    {
-      "property_name": "tier",
-      "value_type": "single_select",
-      "required": true,
-      "default_value": "supporting",
-      "description": "Governance strictness target.",
-      "allowed_values": ["critical", "supporting", "experimental"]
-    },
-    {
-      "property_name": "lang",
-      "value_type": "single_select",
-      "required": true,
-      "default_value": "polyglot",
-      "description": "Which reusable CI to wire.",
-      "allowed_values": ["rust", "ts", "py", "cpp", "cs", "proto", "polyglot"]
-    }
-  ]
-}
-```
+1. **Apply rulesets in `evaluate` mode first** (the JSON files ship
+   this way). Evaluate mode logs violations without blocking any
+   merge. Watch `github.com/organizations/resq-software/settings/rules/<id>`
+   for a week of real PR traffic.
+2. **Verify every repo has a `.github/CODEOWNERS` or `CODEOWNERS`**
+   before flipping to `active`. All 14 repos under `resq-software/`
+   currently have a `CODEOWNERS` file (the migration for `resq-proto`
+   was added in `resq-software/resq-proto#2`).
+3. **Confirm at least one consumer repo has merged a PR emitting the
+   `required` status check** (created by the reusable `required.yml`
+   workflow in this repo). If none do, the `required_status_checks`
+   rule in Ruleset A will fail every future PR once active.
+4. **Flip to active:**
+   ```sh
+   # Fetch the current body, toggle enforcement, PUT the full object back.
+   # PUT with a partial body would strip the ruleset of its rules.
+   gh api /orgs/resq-software/rulesets/<id> \
+     | jq '.enforcement = "active"' \
+     | gh api --method PUT /orgs/resq-software/rulesets/<id> --input -
+   ```
+
+---
+
+## 1. Custom property schema (`ops/properties-schema.json`)
+
+Endpoint: `PATCH /orgs/resq-software/properties/schema`.
+
+Defines three custom properties: `domain` (what the repo serves),
+`tier` (governance strictness), `lang` (which reusable CI to wire).
+`tier=critical` is the selector Ruleset B uses.
 
 Apply:
 
@@ -55,88 +64,48 @@ gh api --method PATCH \
   --input ops/properties-schema.json
 ```
 
-Extract the JSON block above into `ops/properties-schema.json` before running — `gh api --input` reads a file.
-
 ---
 
-## 2. Property value assignments
+## 2. Property value assignments (`ops/properties-values.json`)
 
-Endpoint: `PATCH /orgs/resq-software/properties/values`. One entry per repo.
-
-```json
-{
-  "properties": [
-    { "repository_name": "crates",       "properties": [ {"property_name": "domain", "value": "sdk"},      {"property_name": "tier", "value": "critical"},    {"property_name": "lang", "value": "rust"}      ] },
-    { "repository_name": "dev",          "properties": [ {"property_name": "domain", "value": "tooling"},  {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "ts"}        ] },
-    { "repository_name": "dotnet-sdk",   "properties": [ {"property_name": "domain", "value": "sdk"},      {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "cs"}        ] },
-    { "repository_name": "landing",      "properties": [ {"property_name": "domain", "value": "frontend"}, {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "ts"}        ] },
-    { "repository_name": "programs",     "properties": [ {"property_name": "domain", "value": "drone"},    {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "rust"}      ] },
-    { "repository_name": "npm",          "properties": [ {"property_name": "domain", "value": "sdk"},      {"property_name": "tier", "value": "critical"},    {"property_name": "lang", "value": "ts"}        ] },
-    { "repository_name": "pypi",         "properties": [ {"property_name": "domain", "value": "sdk"},      {"property_name": "tier", "value": "critical"},    {"property_name": "lang", "value": "py"}        ] },
-    { "repository_name": "resQ",         "properties": [ {"property_name": "domain", "value": "backend"},  {"property_name": "tier", "value": "critical"},    {"property_name": "lang", "value": "polyglot"}  ] },
-    { "repository_name": "vcpkg",        "properties": [ {"property_name": "domain", "value": "infra"},    {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "cpp"}       ] },
-    { "repository_name": ".github",      "properties": [ {"property_name": "domain", "value": "ops"},      {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "polyglot"}  ] },
-    { "repository_name": "docs",         "properties": [ {"property_name": "domain", "value": "ops"},      {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "ts"}        ] },
-    { "repository_name": "viz",          "properties": [ {"property_name": "domain", "value": "frontend"}, {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "ts"}        ] },
-    { "repository_name": "resq-proto",   "properties": [ {"property_name": "domain", "value": "backend"},  {"property_name": "tier", "value": "critical"},    {"property_name": "lang", "value": "proto"}     ] },
-    { "repository_name": "ardupilot",    "properties": [ {"property_name": "domain", "value": "drone"},    {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "cpp"}       ] }
-  ]
-}
-```
-
-Apply:
+**Important:** the org-bulk endpoint `PATCH /orgs/<org>/properties/values`
+requires one repo-list + one uniform property-set per call, which
+doesn't match a per-repo assignment scheme. The file in this
+directory is a **wrapper** around the per-repo payloads; apply it
+with a loop that hits the per-repo endpoint
+`PATCH /repos/<owner>/<repo>/properties/values`:
 
 ```sh
-gh api --method PATCH \
-  -H "Accept: application/vnd.github+json" \
-  /orgs/resq-software/properties/values \
-  --input ops/properties-values.json
+jq -r '.repos[] | @json' ops/properties-values.json | while read -r row; do
+  repo=$(jq -r '.repository_name' <<<"$row")
+  props=$(jq '{properties: .properties}' <<<"$row")
+  gh api --method PATCH \
+    -H "Accept: application/vnd.github+json" \
+    "/repos/resq-software/$repo/properties/values" \
+    --input - <<<"$props"
+done
 ```
 
 ---
 
-## 3. Ruleset A — default-branch baseline (all repos)
+## 3. Ruleset A — default-branch baseline (`ops/ruleset-a-baseline.json`)
 
-```json
-{
-  "name": "default-branch-baseline",
-  "target": "branch",
-  "enforcement": "active",
-  "conditions": {
-    "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] },
-    "repository_name": { "include": ["*"], "exclude": [], "protected": true }
-  },
-  "bypass_actors": [
-    { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request" }
-  ],
-  "rules": [
-    { "type": "deletion" },
-    { "type": "non_fast_forward" },
-    { "type": "required_linear_history" },
-    {
-      "type": "pull_request",
-      "parameters": {
-        "required_approving_review_count": 0,
-        "dismiss_stale_reviews_on_push": true,
-        "require_code_owner_review": true,
-        "require_last_push_approval": false,
-        "required_review_thread_resolution": true
-      }
-    },
-    {
-      "type": "required_status_checks",
-      "parameters": {
-        "strict_required_status_checks_policy": true,
-        "required_status_checks": [
-          { "context": "required", "integration_id": null }
-        ]
-      }
-    }
-  ]
-}
-```
+Applies to every repo's default branch. Rules: deletion block,
+no force-push, linear history, PR with code-owner review, required
+status check `required` (emitted by the reusable `required.yml`
+workflow).
 
-`bypass_actors.actor_id: 5` = built-in `RepositoryRole: admin`. Adjust or drop if you want zero bypass.
+**Intent note on `required_approving_review_count: 0` +
+`require_code_owner_review: true`**: for the solo-dev stage of
+resq-software, this means a CODEOWNER must be requested as a
+reviewer but their review does not block merge — effectively a
+visibility guarantee rather than an approval gate. When the team
+grows past one person, bump `required_approving_review_count` to
+`1` and tighten CODEOWNERS coverage.
+
+`bypass_actors.actor_id: 5` is the built-in `RepositoryRole: admin`
+with `bypass_mode: pull_request` — org admins can merge via a PR
+even if CODEOWNERS disapproves, but cannot push directly.
 
 Apply:
 
@@ -149,35 +118,29 @@ gh api --method POST \
 
 ---
 
-## 4. Ruleset B — critical-tier extras
+## 4. Ruleset B — critical-tier extras (`ops/ruleset-b-critical.json`)
 
-Adds stricter rules to repos where `tier=critical`. Composes with Ruleset A.
+Targets repos where custom-property `tier=critical` (currently:
+`crates`, `npm`, `pypi`, `resQ`, `resq-proto`). Composes with
+Ruleset A.
 
-```json
-{
-  "name": "critical-tier-extras",
-  "target": "branch",
-  "enforcement": "active",
-  "conditions": {
-    "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] },
-    "repository_property": {
-      "include": [
-        { "name": "tier", "property_values": ["critical"], "source": "custom" }
-      ],
-      "exclude": []
-    }
-  },
-  "bypass_actors": [],
-  "rules": [
-    {
-      "type": "required_deployments",
-      "parameters": {
-        "required_deployment_environments": ["production"]
-      }
-    }
-  ]
-}
-```
+Rules:
+- `pull_request` with `require_last_push_approval: true` — any new
+  push to a PR after approval re-requires approval.
+- `required_signatures` — commits on the default branch must be
+  GPG/SSH-signed.
+
+**Deviation from an earlier draft:** the original plan used
+`required_deployments: ["production"]`. That was dropped because
+no critical-tier repo currently has a `production` environment
+configured — applying that rule would have blocked every merge.
+Add environments later and swap the rule in if desired.
+
+**`bypass_actors: []` is intentional.** Admin bypass is allowed on
+Ruleset A (baseline rules) but NOT on Ruleset B (critical-tier
+extras), so admins cannot emergency-merge an unsigned commit or
+unresolved-push-approval PR on critical repos. If that's too
+strict, add an admin bypass entry mirroring Ruleset A.
 
 Apply:
 
@@ -207,8 +170,9 @@ gh api /repos/resq-software/pypi/rules/branches/main
 # List with IDs
 gh api /orgs/resq-software/rulesets --jq '.[] | {id, name, enforcement}'
 
-# Soft-disable: PUT replaces the entire ruleset resource, so fetch the
-# existing body, toggle `enforcement`, and re-submit the full object.
+# Soft-disable: PUT replaces the entire ruleset resource, so fetch
+# the existing body, toggle `enforcement`, and re-submit the full
+# object. PUT-ing only `enforcement` would strip the ruleset.
 gh api /orgs/resq-software/rulesets/<id> \
   | jq '.enforcement = "disabled"' \
   | gh api --method PUT /orgs/resq-software/rulesets/<id> --input -
@@ -219,21 +183,3 @@ gh api --method DELETE /orgs/resq-software/rulesets/<id>
 # Remove a property from the schema
 gh api --method DELETE /orgs/resq-software/properties/schema/<property_name>
 ```
-
----
-
-## 7. Extract to standalone files before applying
-
-Before `gh api --input`, split the embedded JSON into its own files:
-
-```
-ops/
-  properties-schema.json      # JSON from §1
-  properties-values.json      # JSON from §2
-  ruleset-a-baseline.json     # JSON from §3
-  ruleset-b-critical.json     # JSON from §4
-```
-
-Each standalone file contains ONLY the JSON body (no Markdown, no code
-fences). This Markdown document is the source-of-truth for intent; the
-split files are what `gh api --input` consumes.

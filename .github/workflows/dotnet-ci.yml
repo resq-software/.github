@@ -3,7 +3,10 @@
 #
 # Reusable .NET CI — restore, build, test, format check. Callable from
 # any resq-software/* repo with a .sln or csproj tree. Pairs with
-# security-scan.yml. SHA-pinned actions with trailing `# <tag>`.
+# security-scan.yml.
+#
+# Security: caller-controlled string inputs that reach `run:` are
+# forwarded through `env:` and referenced as `"$VAR"`.
 
 name: dotnet-ci
 
@@ -11,12 +14,11 @@ on:
   workflow_call:
     inputs:
       dotnet-version:
-        description: .NET SDK version (e.g. "9.0.x", or "global.json").
         type: string
         required: false
         default: "9.0.x"
       solution:
-        description: Path to .sln or csproj (defaults to repo root auto-detect).
+        description: Path to .sln or .csproj (empty = dotnet auto-detect).
         type: string
         required: false
         default: ""
@@ -62,9 +64,14 @@ jobs:
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
       - name: Restore
-        run: dotnet restore ${{ inputs.solution }}
+        env:
+          SLN: ${{ inputs.solution }}
+        run: sh -c "dotnet restore $SLN"
       - name: Build
-        run: dotnet build ${{ inputs.solution }} -c ${{ inputs.configuration }} --no-restore
+        env:
+          SLN: ${{ inputs.solution }}
+          CONFIG: ${{ inputs.configuration }}
+        run: sh -c "dotnet build $SLN -c \"$CONFIG\" --no-restore"
 
   format:
     if: ${{ inputs.run-format-check }}
@@ -83,7 +90,10 @@ jobs:
       - uses: actions/setup-dotnet@3e891b0cb619bf60e2c25674b222b8940e2c1c25  # v4
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
-      - run: dotnet format ${{ inputs.solution }} --verify-no-changes --severity warn
+      - name: dotnet format
+        env:
+          SLN: ${{ inputs.solution }}
+        run: sh -c "dotnet format $SLN --verify-no-changes --severity warn"
 
   test:
     if: ${{ inputs.run-test }}
@@ -103,4 +113,8 @@ jobs:
       - uses: actions/setup-dotnet@3e891b0cb619bf60e2c25674b222b8940e2c1c25  # v4
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
-      - run: dotnet test ${{ inputs.solution }} -c ${{ inputs.configuration }} --verbosity normal
+      - name: dotnet test
+        env:
+          SLN: ${{ inputs.solution }}
+          CONFIG: ${{ inputs.configuration }}
+        run: sh -c "dotnet test $SLN -c \"$CONFIG\" --verbosity normal"
