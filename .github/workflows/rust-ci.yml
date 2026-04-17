@@ -133,7 +133,7 @@ jobs:
           # shellcheck disable=SC2086
           cargo test $FLAGS
       - if: ${{ inputs.run-coverage }}
-        uses: taiki-e/install-action@a416ddeedbd748e9e3f037655f22dc2ee45c17ae  # cargo-llvm-cov
+        uses: taiki-e/install-action@a2352fc6ce487f030a3aa709482d57823eadfb37  # v2
         with:
           tool: cargo-llvm-cov
       - if: ${{ inputs.run-coverage }}
@@ -158,7 +158,15 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - uses: EmbarkStudios/cargo-deny-action@34899fc7ba81ca6268d5947a7a16b4649013fea1  # v2
+      # Runs on the consumer's rust-toolchain.toml so custom targets
+      # (e.g. x86_64-unknown-linux-musl) resolve correctly. The Docker-
+      # based EmbarkStudios/cargo-deny-action did not respect
+      # rust-toolchain.toml and failed with "override toolchain not
+      # installed" when the consumer pinned a non-default target.
+      - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # stable
         with:
-          manifest-path: ${{ inputs.working-directory }}/Cargo.toml
-          arguments: --all-features
+          toolchain: ${{ inputs.toolchain }}
+      - uses: taiki-e/install-action@a2352fc6ce487f030a3aa709482d57823eadfb37  # v2
+        with:
+          tool: cargo-deny
+      - run: cargo deny --all-features check
