@@ -1,0 +1,131 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reusable .NET CI — restore, build, test, format check. Callable from
+# any resq-software/* repo with a .sln or csproj tree. Pairs with
+# security-scan.yml.
+#
+# Security: caller-controlled string inputs are forwarded through env:
+# and expanded by bash directly (not via `sh -c`, which would re-parse
+# and reintroduce the injection path).
+
+name: dotnet-ci
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        type: string
+        required: false
+        default: "9.0.x"
+      solution:
+        description: Path to .sln or .csproj (empty = dotnet auto-detect).
+        type: string
+        required: false
+        default: ""
+      working-directory:
+        type: string
+        required: false
+        default: "."
+      configuration:
+        type: string
+        required: false
+        default: "Release"
+      run-format-check:
+        type: boolean
+        required: false
+        default: true
+      run-test:
+        type: boolean
+        required: false
+        default: true
+      timeout-minutes:
+        type: number
+        required: false
+        default: 20
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/setup-dotnet@3e891b0cb619bf60e2c25674b222b8940e2c1c25  # v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+      - name: Restore
+        env:
+          SLN: ${{ inputs.solution }}
+        run: |
+          # $SLN may be empty (auto-detect) or a path — unquoted
+          # expansion handles both without re-parsing.
+          # shellcheck disable=SC2086
+          dotnet restore $SLN
+      - name: Build
+        env:
+          SLN: ${{ inputs.solution }}
+          CONFIG: ${{ inputs.configuration }}
+        run: |
+          # shellcheck disable=SC2086
+          dotnet build $SLN -c "$CONFIG" --no-restore
+
+  format:
+    if: ${{ inputs.run-format-check }}
+    name: Format check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/setup-dotnet@3e891b0cb619bf60e2c25674b222b8940e2c1c25  # v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+      - name: dotnet format
+        env:
+          SLN: ${{ inputs.solution }}
+        run: |
+          # shellcheck disable=SC2086
+          dotnet format $SLN --verify-no-changes --severity warn
+
+  test:
+    if: ${{ inputs.run-test }}
+    name: Test
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/setup-dotnet@3e891b0cb619bf60e2c25674b222b8940e2c1c25  # v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+      - name: dotnet test
+        env:
+          SLN: ${{ inputs.solution }}
+          CONFIG: ${{ inputs.configuration }}
+        run: |
+          # shellcheck disable=SC2086
+          dotnet test $SLN -c "$CONFIG" --verbosity normal

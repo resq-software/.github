@@ -1,0 +1,28 @@
+{
+  "properties": [
+    {
+      "property_name": "domain",
+      "value_type": "single_select",
+      "required": true,
+      "default_value": "tooling",
+      "description": "What the repo serves.",
+      "allowed_values": ["drone", "backend", "frontend", "sdk", "ops", "infra", "tooling"]
+    },
+    {
+      "property_name": "tier",
+      "value_type": "single_select",
+      "required": true,
+      "default_value": "supporting",
+      "description": "Governance strictness target.",
+      "allowed_values": ["critical", "supporting", "experimental"]
+    },
+    {
+      "property_name": "lang",
+      "value_type": "single_select",
+      "required": true,
+      "default_value": "polyglot",
+      "description": "Which reusable CI to wire.",
+      "allowed_values": ["rust", "ts", "py", "cpp", "cs", "proto", "polyglot"]
+    }
+  ]
+}

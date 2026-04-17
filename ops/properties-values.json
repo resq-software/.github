@@ -1,0 +1,19 @@
+{
+  "_comment_schema": "Wrapper shape: one entry per repo. Apply in a loop via: gh api --method PATCH /repos/resq-software/<repo>/properties/values --input <(jq -n --argjson v <this-entry.properties> '{properties:$v}'). See governance-payloads.md for the ready-to-run loop.",
+  "repos": [
+    { "repository_name": "crates",       "properties": [ {"property_name": "domain", "value": "sdk"},      {"property_name": "tier", "value": "critical"},    {"property_name": "lang", "value": "rust"}      ] },
+    { "repository_name": "dev",          "properties": [ {"property_name": "domain", "value": "tooling"},  {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "ts"}        ] },
+    { "repository_name": "dotnet-sdk",   "properties": [ {"property_name": "domain", "value": "sdk"},      {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "cs"}        ] },
+    { "repository_name": "landing",      "properties": [ {"property_name": "domain", "value": "frontend"}, {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "ts"}        ] },
+    { "repository_name": "programs",     "properties": [ {"property_name": "domain", "value": "drone"},    {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "rust"}      ] },
+    { "repository_name": "npm",          "properties": [ {"property_name": "domain", "value": "sdk"},      {"property_name": "tier", "value": "critical"},    {"property_name": "lang", "value": "ts"}        ] },
+    { "repository_name": "pypi",         "properties": [ {"property_name": "domain", "value": "sdk"},      {"property_name": "tier", "value": "critical"},    {"property_name": "lang", "value": "py"}        ] },
+    { "repository_name": "resQ",         "properties": [ {"property_name": "domain", "value": "backend"},  {"property_name": "tier", "value": "critical"},    {"property_name": "lang", "value": "polyglot"}  ] },
+    { "repository_name": "vcpkg",        "properties": [ {"property_name": "domain", "value": "infra"},    {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "cpp"}       ] },
+    { "repository_name": ".github",      "properties": [ {"property_name": "domain", "value": "ops"},      {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "polyglot"}  ] },
+    { "repository_name": "docs",         "properties": [ {"property_name": "domain", "value": "ops"},      {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "ts"}        ] },
+    { "repository_name": "viz",          "properties": [ {"property_name": "domain", "value": "frontend"}, {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "cs"}        ] },
+    { "repository_name": "resq-proto",   "properties": [ {"property_name": "domain", "value": "backend"},  {"property_name": "tier", "value": "critical"},    {"property_name": "lang", "value": "proto"}     ] },
+    { "repository_name": "ardupilot",    "properties": [ {"property_name": "domain", "value": "drone"},    {"property_name": "tier", "value": "supporting"},  {"property_name": "lang", "value": "cpp"}       ] }
+  ]
+}

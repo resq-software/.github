@@ -1,0 +1,86 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reusable C++ CI — CMake configure + build + test. Matrix over OS.
+# Pairs with security-scan.yml.
+#
+# Security: caller-controlled path/flag inputs are forwarded through
+# `env:` and referenced as `"$VAR"` to prevent shell injection.
+
+name: cpp-ci
+
+on:
+  workflow_call:
+    inputs:
+      os-list:
+        type: string
+        required: false
+        default: '["ubuntu-latest","macos-latest","windows-latest"]'
+      source-dir:
+        type: string
+        required: false
+        default: "."
+      build-dir:
+        type: string
+        required: false
+        default: "build"
+      cmake-flags:
+        type: string
+        required: false
+        default: ""
+      build-config:
+        type: string
+        required: false
+        default: "Debug"
+      run-test:
+        type: boolean
+        required: false
+        default: true
+      timeout-minutes:
+        type: number
+        required: false
+        default: 30
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os-list) }}
+    steps:
+      - name: Harden Runner
+        if: runner.os == 'Linux'
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - name: Configure
+        shell: bash
+        env:
+          SRC: ${{ inputs.source-dir }}
+          BUILD: ${{ inputs.build-dir }}
+          FLAGS: ${{ inputs.cmake-flags }}
+        # shellcheck disable=SC2086 - FLAGS is intentionally word-split into
+        # multiple cmake arguments; quoting would pass them as a single token.
+        run: |
+          # shellcheck disable=SC2086
+          cmake -B "$BUILD" $FLAGS "$SRC"
+      - name: Build
+        shell: bash
+        env:
+          BUILD: ${{ inputs.build-dir }}
+          CONFIG: ${{ inputs.build-config }}
+        run: cmake --build "$BUILD" --config "$CONFIG"
+      - if: ${{ inputs.run-test }}
+        name: Test
+        shell: bash
+        env:
+          BUILD: ${{ inputs.build-dir }}
+          CONFIG: ${{ inputs.build-config }}
+        run: ctest --test-dir "$BUILD" --output-on-failure -C "$CONFIG"

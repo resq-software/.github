@@ -1,0 +1,4 @@
+# Default owner for all files in resq-software/.github.
+# Once a core team exists, point `*` to that team (e.g. `@resq-software/core`)
+# and add narrower owners for specific paths.
+* @WomB0ComB0

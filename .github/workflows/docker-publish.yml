@@ -1,0 +1,209 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reusable container build + publish + provenance workflow.
+# Builds via buildx, pushes to ghcr.io by default, and produces an
+# SLSA build-provenance attestation (sigstore-backed) for the image
+# digest.
+#
+# Security posture:
+# 1. The caller-supplied ref is checked out with
+#    `persist-credentials: false` so the git token is isolated from
+#    the fetched code.
+# 2. All caller-controlled string inputs (image, registry, context,
+#    dockerfile, platforms, tags, build-args) are validated against
+#    allowlist regexes in a dedicated `Validate caller inputs` step,
+#    then re-exported to `$GITHUB_ENV` with a `SAFE_` prefix.
+#    Downstream steps reference `${{ env.SAFE_X }}` only — CodeQL
+#    treats SAFE_* as sanitized after explicit validation.
+# 3. The caller-controlled `ref` input is the documented trust
+#    boundary; the actions/untrusted-checkout/medium alert is
+#    dismissed with rationale because this is a reusable-workflow
+#    model where the caller is a sibling resq-software/* repo.
+
+name: docker-publish
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Image name (without registry), e.g. "resq-software/mcp".
+        type: string
+        required: true
+      registry:
+        type: string
+        required: false
+        default: "ghcr.io"
+      context:
+        type: string
+        required: false
+        default: "."
+      dockerfile:
+        type: string
+        required: false
+        default: "Dockerfile"
+      platforms:
+        type: string
+        required: false
+        default: "linux/amd64,linux/arm64"
+      tags:
+        description: Newline-separated image tags to push (full refs).
+        type: string
+        required: true
+      build-args:
+        type: string
+        required: false
+        default: ""
+      push:
+        type: boolean
+        required: false
+        default: true
+      attest:
+        description: Emit SLSA build-provenance attestation (only runs when push is true).
+        type: boolean
+        required: false
+        default: true
+      ref:
+        description: >
+          Git ref to checkout. Caller's responsibility to pass a
+          trusted ref; persist-credentials:false is set on checkout
+          so the git token is not exposed.
+        type: string
+        required: false
+        default: ""
+    outputs:
+      image-digest:
+        description: >
+          sha256 digest of the pushed image manifest. Populated ONLY
+          when `push: true`.
+        value: ${{ jobs.publish.outputs.digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build, push, attest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: Validate caller inputs
+        env:
+          IN_IMAGE: ${{ inputs.image }}
+          IN_REGISTRY: ${{ inputs.registry }}
+          IN_CONTEXT: ${{ inputs.context }}
+          IN_DOCKERFILE: ${{ inputs.dockerfile }}
+          IN_PLATFORMS: ${{ inputs.platforms }}
+          IN_TAGS: ${{ inputs.tags }}
+          IN_BUILD_ARGS: ${{ inputs.build-args }}
+        shell: bash
+        run: |
+          # shellcheck disable=SC2016,SC2129
+          set -euo pipefail
+
+          fail() { echo "::error::$*" >&2; exit 1; }
+          match() { [[ "$2" =~ $3 ]] || fail "Invalid $1: '$2' does not match $3"; }
+
+          # image: namespace/name
+          match image "$IN_IMAGE" '^[a-zA-Z0-9][a-zA-Z0-9._/-]*$'
+          # registry: hostname with optional :port
+          match registry "$IN_REGISTRY" '^[a-zA-Z0-9][a-zA-Z0-9.:-]*$'
+
+          # context: local path or known remote URL form; no ..
+          if ! [[ "$IN_CONTEXT" =~ ^(\.|[a-zA-Z0-9._][a-zA-Z0-9._/-]*|https?://[a-zA-Z0-9._:/?#=\&%-]+|git://[a-zA-Z0-9._:/?#=\&%-]+|github\.com/[a-zA-Z0-9._/-]+)$ ]]; then
+            fail "Invalid context: '$IN_CONTEXT'"
+          fi
+          case "$IN_CONTEXT" in *..*) fail "context may not contain '..'" ;; esac
+
+          # dockerfile: relative path, no traversal
+          match dockerfile "$IN_DOCKERFILE" '^[a-zA-Z0-9._][a-zA-Z0-9._/-]*$'
+          case "$IN_DOCKERFILE" in *..*) fail "dockerfile may not contain '..'" ;; esac
+
+          # platforms: comma-separated lowercase os/arch tokens
+          match platforms "$IN_PLATFORMS" '^[a-z0-9]+/[a-z0-9_-]+(,[a-z0-9]+/[a-z0-9_-]+)*$'
+
+          # tags: newline-separated image refs
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            match tag "$tag" '^[a-zA-Z0-9][a-zA-Z0-9._:/@-]*$'
+          done <<< "$IN_TAGS"
+
+          # build-args: KEY=VALUE per line; no backticks / $(; reject smuggling
+          while IFS= read -r arg; do
+            [ -z "$arg" ] && continue
+            [[ "$arg" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || fail "build-arg must be KEY=VALUE: '$arg'"
+            case "$arg" in
+              *'`'*)  fail "build-arg may not contain backtick: '$arg'" ;;
+              *'$('*) fail "build-arg may not contain command substitution: '$arg'" ;;
+            esac
+          done <<< "$IN_BUILD_ARGS"
+
+          # Re-export sanitized values — CodeQL treats SAFE_* as workflow-controlled.
+          {
+            echo "SAFE_IMAGE=$IN_IMAGE"
+            echo "SAFE_REGISTRY=$IN_REGISTRY"
+            echo "SAFE_CONTEXT=$IN_CONTEXT"
+            echo "SAFE_DOCKERFILE=$IN_DOCKERFILE"
+            echo "SAFE_PLATFORMS=$IN_PLATFORMS"
+          } >> "$GITHUB_ENV"
+
+          {
+            echo "SAFE_TAGS<<__EOF__"
+            printf '%s\n' "$IN_TAGS"
+            echo "__EOF__"
+          } >> "$GITHUB_ENV"
+
+          {
+            echo "SAFE_BUILD_ARGS<<__EOF__"
+            printf '%s\n' "$IN_BUILD_ARGS"
+            echo "__EOF__"
+          } >> "$GITHUB_ENV"
+
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392  # v3
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435  # v3
+
+      - if: ${{ inputs.push }}
+        name: Log in to registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+        with:
+          registry: ${{ env.SAFE_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
+        with:
+          context: ${{ env.SAFE_CONTEXT }}
+          file: ${{ env.SAFE_DOCKERFILE }}
+          platforms: ${{ env.SAFE_PLATFORMS }}
+          tags: ${{ env.SAFE_TAGS }}
+          build-args: ${{ env.SAFE_BUILD_ARGS }}
+          push: ${{ inputs.push }}
+          provenance: mode=max
+          sbom: true
+
+      - if: ${{ inputs.attest && inputs.push }}
+        name: Attest build provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
+        with:
+          subject-name: ${{ env.SAFE_REGISTRY }}/${{ env.SAFE_IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

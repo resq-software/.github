@@ -1,0 +1,215 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reusable CI aggregator. Each consumer repo calls this with a `lang`
+# input matching its `lang` custom-repo-property value. The workflow
+# dispatches to the matching language CI (rust|python|node|dotnet|cpp|
+# proto|polyglot) and always runs the org-wide security scan in
+# parallel. The final `required` job needs all upstream jobs — Ruleset
+# A requires the `required` status-check context.
+#
+# For `lang: proto` repos, only security scanning runs — no language
+# build is dispatched.
+
+name: required
+
+on:
+  workflow_call:
+    inputs:
+      lang:
+        description: One of rust|python|node|dotnet|cpp|proto|polyglot.
+        type: string
+        required: true
+      working-directory:
+        type: string
+        required: false
+        default: "."
+      codeql-languages:
+        type: string
+        required: false
+        default: "[]"
+      enable-semgrep:
+        type: boolean
+        required: false
+        default: false
+      enable-gitleaks:
+        type: boolean
+        required: false
+        default: false
+      node-package-manager:
+        type: string
+        required: false
+        default: "bun"
+      node-lint-cmd:
+        type: string
+        required: false
+        default: ""
+      node-typecheck-cmd:
+        type: string
+        required: false
+        default: ""
+      node-test-cmd:
+        type: string
+        required: false
+        default: ""
+      node-build-cmd:
+        type: string
+        required: false
+        default: ""
+      rust-run-coverage:
+        type: boolean
+        required: false
+        default: false
+      rust-run-deny:
+        type: boolean
+        required: false
+        default: false
+      python-versions:
+        type: string
+        required: false
+        default: '["3.11","3.12","3.13"]'
+      dotnet-version:
+        type: string
+        required: false
+        default: "9.0.x"
+      dotnet-solution:
+        type: string
+        required: false
+        default: ""
+      cpp-os-list:
+        type: string
+        required: false
+        default: '["ubuntu-latest"]'
+      cpp-source-dir:
+        type: string
+        required: false
+        default: "."
+      cpp-cmake-flags:
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: read
+
+jobs:
+  # Fail fast if the caller passed an unknown `lang`. Without this, a
+  # typo (e.g. `pyhton`) skips every language job, and `required`
+  # passes with only security actually executing.
+  validate-lang:
+    name: validate lang
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - name: Validate lang input
+        env:
+          LANG_INPUT: ${{ inputs.lang }}
+        run: |
+          set -eu
+          case "$LANG_INPUT" in
+            rust|python|node|dotnet|cpp|proto|polyglot) echo "ok: lang=$LANG_INPUT" ;;
+            *) echo "::error::Unknown lang '$LANG_INPUT'. Must be one of: rust, python, node, dotnet, cpp, proto, polyglot." >&2; exit 1 ;;
+          esac
+
+  security:
+    needs: [validate-lang]
+    name: Security
+    uses: ./.github/workflows/security-scan.yml
+    with:
+      languages: ${{ inputs.codeql-languages }}
+      enable-semgrep: ${{ inputs.enable-semgrep }}
+      enable-gitleaks: ${{ inputs.enable-gitleaks }}
+    secrets: inherit
+
+  rust:
+    needs: [validate-lang]
+    if: ${{ inputs.lang == 'rust' || inputs.lang == 'polyglot' }}
+    name: Rust CI
+    uses: ./.github/workflows/rust-ci.yml
+    with:
+      working-directory: ${{ inputs.working-directory }}
+      run-coverage: ${{ inputs.rust-run-coverage }}
+      run-deny: ${{ inputs.rust-run-deny }}
+
+  python:
+    needs: [validate-lang]
+    if: ${{ inputs.lang == 'python' || inputs.lang == 'polyglot' }}
+    name: Python CI
+    uses: ./.github/workflows/python-ci.yml
+    with:
+      working-directory: ${{ inputs.working-directory }}
+      python-versions: ${{ inputs.python-versions }}
+
+  node:
+    needs: [validate-lang]
+    if: ${{ inputs.lang == 'node' || inputs.lang == 'polyglot' }}
+    name: Node CI
+    uses: ./.github/workflows/node-ci.yml
+    with:
+      working-directory: ${{ inputs.working-directory }}
+      package-manager: ${{ inputs.node-package-manager }}
+      lint-cmd: ${{ inputs.node-lint-cmd }}
+      typecheck-cmd: ${{ inputs.node-typecheck-cmd }}
+      test-cmd: ${{ inputs.node-test-cmd }}
+      build-cmd: ${{ inputs.node-build-cmd }}
+
+  dotnet:
+    needs: [validate-lang]
+    if: ${{ inputs.lang == 'dotnet' || inputs.lang == 'polyglot' }}
+    name: .NET CI
+    uses: ./.github/workflows/dotnet-ci.yml
+    with:
+      dotnet-version: ${{ inputs.dotnet-version }}
+      solution: ${{ inputs.dotnet-solution }}
+      working-directory: ${{ inputs.working-directory }}
+
+  cpp:
+    needs: [validate-lang]
+    if: ${{ inputs.lang == 'cpp' || inputs.lang == 'polyglot' }}
+    name: C++ CI
+    uses: ./.github/workflows/cpp-ci.yml
+    with:
+      os-list: ${{ inputs.cpp-os-list }}
+      source-dir: ${{ inputs.cpp-source-dir }}
+      cmake-flags: ${{ inputs.cpp-cmake-flags }}
+
+  # `required` is the single status-check context consumed by Ruleset A.
+  required:
+    name: required
+    needs: [validate-lang, security, rust, python, node, dotnet, cpp]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - name: Evaluate upstream results
+        env:
+          VALIDATE_RESULT: ${{ needs.validate-lang.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+          RUST_RESULT: ${{ needs.rust.result }}
+          PYTHON_RESULT: ${{ needs.python.result }}
+          NODE_RESULT: ${{ needs.node.result }}
+          DOTNET_RESULT: ${{ needs.dotnet.result }}
+          CPP_RESULT: ${{ needs.cpp.result }}
+        run: |
+          set -eu
+          # validate-lang must be success — typo defenses handled there
+          if [ "$VALIDATE_RESULT" != "success" ]; then
+            echo "::error::lang validation failed: $VALIDATE_RESULT"
+            exit 1
+          fi
+          fail=0
+          for r in "$SECURITY_RESULT" "$RUST_RESULT" "$PYTHON_RESULT" "$NODE_RESULT" "$DOTNET_RESULT" "$CPP_RESULT"; do
+            case "$r" in
+              success|skipped|"") ;;
+              *) echo "::error::Upstream job returned: $r"; fail=1 ;;
+            esac
+          done
+          exit "$fail"
