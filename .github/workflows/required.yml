@@ -3,12 +3,14 @@
 #
 # Reusable CI aggregator. Each consumer repo calls this with a `lang`
 # input matching its `lang` custom-repo-property value. The workflow
-# dispatches to the matching language CI (rust|python|node|polyglot)
-# and always runs the org-wide security scan in parallel. The final
-# `required` job needs all upstream jobs — Ruleset A requires the
-# `required` status-check context.
+# dispatches to the matching language CI (rust|python|node|dotnet|cpp|
+# proto|polyglot) and always runs the org-wide security scan in
+# parallel. The final `required` job needs all upstream jobs — Ruleset
+# A requires the `required` status-check context.
 #
-# SHA-pinned actions with trailing `# <tag>` for Dependabot.
+# For `lang: proto` repos (e.g. resq-proto), only security scanning
+# runs — no language build is dispatched. Add a buf lint / breaking-
+# change workflow locally if you want extra checks.
 
 name: required
 
@@ -16,7 +18,7 @@ on:
   workflow_call:
     inputs:
       lang:
-        description: One of rust|python|node|polyglot.
+        description: One of rust|python|node|dotnet|cpp|proto|polyglot.
         type: string
         required: true
       working-directory:
@@ -24,7 +26,6 @@ on:
         required: false
         default: "."
       codeql-languages:
-        description: JSON array for security-scan CodeQL input.
         type: string
         required: false
         default: "[]"
@@ -68,6 +69,26 @@ on:
         type: string
         required: false
         default: '["3.11","3.12","3.13"]'
+      dotnet-version:
+        type: string
+        required: false
+        default: "9.0.x"
+      dotnet-solution:
+        type: string
+        required: false
+        default: ""
+      cpp-os-list:
+        type: string
+        required: false
+        default: '["ubuntu-latest"]'
+      cpp-source-dir:
+        type: string
+        required: false
+        default: "."
+      cpp-cmake-flags:
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -113,12 +134,30 @@ jobs:
       test-cmd: ${{ inputs.node-test-cmd }}
       build-cmd: ${{ inputs.node-build-cmd }}
 
+  dotnet:
+    if: ${{ inputs.lang == 'dotnet' || inputs.lang == 'polyglot' }}
+    name: .NET CI
+    uses: ./.github/workflows/dotnet-ci.yml
+    with:
+      dotnet-version: ${{ inputs.dotnet-version }}
+      solution: ${{ inputs.dotnet-solution }}
+      working-directory: ${{ inputs.working-directory }}
+
+  cpp:
+    if: ${{ inputs.lang == 'cpp' || inputs.lang == 'polyglot' }}
+    name: C++ CI
+    uses: ./.github/workflows/cpp-ci.yml
+    with:
+      os-list: ${{ inputs.cpp-os-list }}
+      source-dir: ${{ inputs.cpp-source-dir }}
+      cmake-flags: ${{ inputs.cpp-cmake-flags }}
+
+  # proto repos get security-only; nothing to dispatch here beyond that.
+
   # `required` is the single status-check context consumed by Ruleset A.
-  # Passes iff every dispatched language job AND security passed.
-  # Skipped jobs (lang-mismatch `if:` gates) are treated as success.
   required:
     name: required
-    needs: [security, rust, python, node]
+    needs: [security, rust, python, node, dotnet, cpp]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -128,10 +167,12 @@ jobs:
           RUST_RESULT: ${{ needs.rust.result }}
           PYTHON_RESULT: ${{ needs.python.result }}
           NODE_RESULT: ${{ needs.node.result }}
+          DOTNET_RESULT: ${{ needs.dotnet.result }}
+          CPP_RESULT: ${{ needs.cpp.result }}
         run: |
           set -eu
           fail=0
-          for r in "$SECURITY_RESULT" "$RUST_RESULT" "$PYTHON_RESULT" "$NODE_RESULT"; do
+          for r in "$SECURITY_RESULT" "$RUST_RESULT" "$PYTHON_RESULT" "$NODE_RESULT" "$DOTNET_RESULT" "$CPP_RESULT"; do
             case "$r" in
               success|skipped|"") ;;
               *) echo "::error::Upstream job returned: $r"; fail=1 ;;
