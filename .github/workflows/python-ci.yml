@@ -88,11 +88,15 @@ jobs:
       - name: ruff check
         env:
           TARGETS: ${{ inputs.ruff-targets }}
-        run: sh -c "uv run ruff check $TARGETS"
+        run: |
+          # shellcheck disable=SC2086
+          uv run ruff check $TARGETS
       - name: ruff format check
         env:
           TARGETS: ${{ inputs.ruff-targets }}
-        run: sh -c "uv run ruff format --check $TARGETS"
+        run: |
+          # shellcheck disable=SC2086
+          uv run ruff format --check $TARGETS
 
   typecheck:
     if: ${{ inputs.run-typecheck }}
@@ -116,7 +120,9 @@ jobs:
       - name: mypy
         env:
           TARGETS: ${{ inputs.mypy-targets }}
-        run: sh -c "uv run mypy $TARGETS"
+        run: |
+          # shellcheck disable=SC2086
+          uv run mypy $TARGETS
 
   test:
     if: ${{ inputs.run-test }}
@@ -145,7 +151,9 @@ jobs:
         env:
           PATHS: ${{ inputs.test-paths }}
           FLAGS: ${{ inputs.test-flags }}
-        run: sh -c "uv run pytest $PATHS $FLAGS"
+        run: |
+          # shellcheck disable=SC2086
+          uv run pytest $PATHS $FLAGS
 
   build:
     if: ${{ inputs.run-build }}

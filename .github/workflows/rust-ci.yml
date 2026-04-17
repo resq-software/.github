@@ -102,7 +102,9 @@ jobs:
       - name: cargo clippy
         env:
           FLAGS: ${{ inputs.clippy-flags }}
-        run: sh -c "cargo clippy $FLAGS"
+        run: |
+          # shellcheck disable=SC2086
+          cargo clippy $FLAGS
 
   test:
     if: ${{ inputs.run-test }}
@@ -127,7 +129,9 @@ jobs:
         name: cargo test
         env:
           FLAGS: ${{ inputs.test-flags }}
-        run: sh -c "cargo test $FLAGS"
+        run: |
+          # shellcheck disable=SC2086
+          cargo test $FLAGS
       - if: ${{ inputs.run-coverage }}
         uses: taiki-e/install-action@a416ddeedbd748e9e3f037655f22dc2ee45c17ae  # cargo-llvm-cov
         with:

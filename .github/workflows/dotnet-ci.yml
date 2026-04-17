@@ -5,8 +5,9 @@
 # any resq-software/* repo with a .sln or csproj tree. Pairs with
 # security-scan.yml.
 #
-# Security: caller-controlled string inputs that reach `run:` are
-# forwarded through `env:` and referenced as `"$VAR"`.
+# Security: caller-controlled string inputs are forwarded through env:
+# and expanded by bash directly (not via `sh -c`, which would re-parse
+# and reintroduce the injection path).
 
 name: dotnet-ci
 
@@ -66,12 +67,18 @@ jobs:
       - name: Restore
         env:
           SLN: ${{ inputs.solution }}
-        run: sh -c "dotnet restore $SLN"
+        run: |
+          # $SLN may be empty (auto-detect) or a path — unquoted
+          # expansion handles both without re-parsing.
+          # shellcheck disable=SC2086
+          dotnet restore $SLN
       - name: Build
         env:
           SLN: ${{ inputs.solution }}
           CONFIG: ${{ inputs.configuration }}
-        run: sh -c "dotnet build $SLN -c \"$CONFIG\" --no-restore"
+        run: |
+          # shellcheck disable=SC2086
+          dotnet build $SLN -c "$CONFIG" --no-restore
 
   format:
     if: ${{ inputs.run-format-check }}
@@ -93,7 +100,9 @@ jobs:
       - name: dotnet format
         env:
           SLN: ${{ inputs.solution }}
-        run: sh -c "dotnet format $SLN --verify-no-changes --severity warn"
+        run: |
+          # shellcheck disable=SC2086
+          dotnet format $SLN --verify-no-changes --severity warn
 
   test:
     if: ${{ inputs.run-test }}
@@ -117,4 +126,6 @@ jobs:
         env:
           SLN: ${{ inputs.solution }}
           CONFIG: ${{ inputs.configuration }}
-        run: sh -c "dotnet test $SLN -c \"$CONFIG\" --verbosity normal"
+        run: |
+          # shellcheck disable=SC2086
+          dotnet test $SLN -c "$CONFIG" --verbosity normal

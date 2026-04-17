@@ -29,9 +29,14 @@ is no code owner to approve. The recommended rollout:
    merge. Watch `github.com/organizations/resq-software/settings/rules/<id>`
    for a week of real PR traffic.
 2. **Verify every repo has a `.github/CODEOWNERS` or `CODEOWNERS`**
-   before flipping to `active`. All 14 repos under `resq-software/`
-   currently have a `CODEOWNERS` file (the migration for `resq-proto`
-   was added in `resq-software/resq-proto#2`).
+   before flipping to `active`. As of commit time the following repos
+   are missing one:
+   - `resq-software/.github` — fixed in this PR (see `.github/CODEOWNERS`).
+   - `resq-software/ardupilot` — open; add a small CODEOWNERS before
+     activation, or exclude via `conditions.repository_name.exclude`
+     in Ruleset A during the bake window.
+   - `resq-software/resq-proto` — fix is pending in
+     `resq-software/resq-proto#2`; merge that first.
 3. **Confirm at least one consumer repo has merged a PR emitting the
    `required` status check** (created by the reusable `required.yml`
    workflow in this repo). If none do, the `required_status_checks`

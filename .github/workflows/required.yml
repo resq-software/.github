@@ -102,6 +102,10 @@ jobs:
     name: validate lang
     runs-on: ubuntu-latest
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
       - name: Validate lang input
         env:
           LANG_INPUT: ${{ inputs.lang }}
@@ -181,6 +185,10 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
       - name: Evaluate upstream results
         env:
           VALIDATE_RESULT: ${{ needs.validate-lang.result }}
@@ -192,7 +200,7 @@ jobs:
           CPP_RESULT: ${{ needs.cpp.result }}
         run: |
           set -eu
-          # validate-lang must be success — typo defends handled there
+          # validate-lang must be success — typo defenses handled there
           if [ "$VALIDATE_RESULT" != "success" ]; then
             echo "::error::lang validation failed: $VALIDATE_RESULT"
             exit 1
