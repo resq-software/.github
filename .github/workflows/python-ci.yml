@@ -1,0 +1,154 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reusable Python CI — uv + ruff + mypy + pytest. Callable from any
+# resq-software/* repo. Pairs with security-scan.yml. SHA-pinned
+# actions with trailing `# <tag>` so Dependabot can refresh them.
+
+name: python-ci
+
+on:
+  workflow_call:
+    inputs:
+      python-versions:
+        description: JSON array of Python versions for the test matrix.
+        type: string
+        required: false
+        default: '["3.11","3.12","3.13"]'
+      default-python:
+        description: Python version used for lint, typecheck, build.
+        type: string
+        required: false
+        default: "3.13"
+      working-directory:
+        description: Package directory containing pyproject.toml.
+        type: string
+        required: false
+        default: "."
+      run-lint:
+        type: boolean
+        required: false
+        default: true
+      run-typecheck:
+        type: boolean
+        required: false
+        default: true
+      run-test:
+        type: boolean
+        required: false
+        default: true
+      run-build:
+        type: boolean
+        required: false
+        default: true
+      test-flags:
+        description: Extra flags passed to pytest.
+        type: string
+        required: false
+        default: "-v"
+      mypy-targets:
+        description: mypy target path(s).
+        type: string
+        required: false
+        default: "src/"
+      ruff-targets:
+        description: ruff target path(s).
+        type: string
+        required: false
+        default: "src/ tests/"
+      timeout-minutes:
+        type: number
+        required: false
+        default: 15
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    if: ${{ inputs.run-lint }}
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57  # v8.0.0
+        with:
+          python-version: ${{ inputs.default-python }}
+          enable-cache: true
+      - run: uv sync
+      - run: uv run ruff check ${{ inputs.ruff-targets }}
+      - run: uv run ruff format --check ${{ inputs.ruff-targets }}
+
+  typecheck:
+    if: ${{ inputs.run-typecheck }}
+    name: Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57  # v8.0.0
+        with:
+          python-version: ${{ inputs.default-python }}
+          enable-cache: true
+      - run: uv sync
+      - run: uv run mypy ${{ inputs.mypy-targets }}
+
+  test:
+    if: ${{ inputs.run-test }}
+    name: Test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(inputs.python-versions) }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57  # v8.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - run: uv sync
+      - run: uv run pytest tests/ ${{ inputs.test-flags }}
+
+  build:
+    if: ${{ inputs.run-build }}
+    name: Build wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57  # v8.0.0
+        with:
+          python-version: ${{ inputs.default-python }}
+          enable-cache: true
+      - run: uv build

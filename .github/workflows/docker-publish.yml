@@ -1,0 +1,124 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reusable container build + publish + provenance workflow.
+# Builds via buildx, pushes to ghcr.io by default, and produces
+# an SLSA build-provenance attestation (sigstore-backed) for the
+# image digest. Callable from any resq-software/* repo.
+#
+# SHA-pinned actions with trailing `# <tag>` for Dependabot.
+
+name: docker-publish
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Image name (without registry), e.g. "resq-software/mcp".
+        type: string
+        required: true
+      registry:
+        type: string
+        required: false
+        default: "ghcr.io"
+      context:
+        description: Docker build context path.
+        type: string
+        required: false
+        default: "."
+      dockerfile:
+        description: Path to Dockerfile relative to repo root.
+        type: string
+        required: false
+        default: "Dockerfile"
+      platforms:
+        description: Comma-separated target platforms.
+        type: string
+        required: false
+        default: "linux/amd64,linux/arm64"
+      tags:
+        description: |
+          Newline-separated image tags to push (full refs). Example:
+            ghcr.io/resq-software/mcp:latest
+            ghcr.io/resq-software/mcp:${{ version }}
+        type: string
+        required: true
+      build-args:
+        description: Newline-separated docker build args (KEY=VALUE).
+        type: string
+        required: false
+        default: ""
+      push:
+        type: boolean
+        required: false
+        default: true
+      attest:
+        description: Emit SLSA build-provenance attestation.
+        type: boolean
+        required: false
+        default: true
+      ref:
+        description: Git ref to checkout (defaults to workflow ref).
+        type: string
+        required: false
+        default: ""
+    outputs:
+      image-digest:
+        description: sha256 digest of the pushed image manifest.
+        value: ${{ jobs.publish.outputs.digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build, push, attest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write        # push to GHCR
+      id-token: write        # OIDC for keyless sigstore signing
+      attestations: write    # actions/attest-build-provenance
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392  # v3
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435  # v3
+
+      - name: Log in to registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          tags: ${{ inputs.tags }}
+          build-args: ${{ inputs.build-args }}
+          push: ${{ inputs.push }}
+          provenance: mode=max
+          sbom: true
+
+      - if: ${{ inputs.attest && inputs.push }}
+        name: Attest build provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
+        with:
+          subject-name: ${{ inputs.registry }}/${{ inputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

@@ -1,0 +1,122 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reusable Node/TypeScript CI — supports bun (default), npm, pnpm, yarn.
+# Generic; doesn't enforce a specific test framework or linter. Pairs
+# with security-scan.yml. SHA-pinned actions with trailing `# <tag>`.
+
+name: node-ci
+
+on:
+  workflow_call:
+    inputs:
+      package-manager:
+        description: bun | npm | pnpm | yarn.
+        type: string
+        required: false
+        default: "bun"
+      node-version:
+        type: string
+        required: false
+        default: "22"
+      bun-version:
+        type: string
+        required: false
+        default: "latest"
+      working-directory:
+        type: string
+        required: false
+        default: "."
+      install-cmd:
+        description: Override install command. Empty = pm default (e.g., `bun install`).
+        type: string
+        required: false
+        default: ""
+      lint-cmd:
+        description: Lint script (empty to skip).
+        type: string
+        required: false
+        default: ""
+      typecheck-cmd:
+        description: Typecheck script (empty to skip).
+        type: string
+        required: false
+        default: ""
+      test-cmd:
+        description: Test script (empty to skip).
+        type: string
+        required: false
+        default: ""
+      build-cmd:
+        description: Build script (empty to skip).
+        type: string
+        required: false
+        default: ""
+      timeout-minutes:
+        type: number
+        required: false
+        default: 15
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Node CI
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - if: ${{ inputs.package-manager == 'bun' }}
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76  # v2
+        with:
+          bun-version: ${{ inputs.bun-version }}
+
+      - if: ${{ inputs.package-manager != 'bun' }}
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: ${{ inputs.package-manager == 'yarn' && 'yarn' || inputs.package-manager == 'pnpm' && 'pnpm' || 'npm' }}
+
+      - if: ${{ inputs.package-manager == 'pnpm' }}
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda  # v4
+        with:
+          run_install: false
+
+      - name: Install
+        run: |
+          if [ -n "${{ inputs.install-cmd }}" ]; then
+            ${{ inputs.install-cmd }}
+          else
+            case "${{ inputs.package-manager }}" in
+              bun)   bun install --frozen-lockfile ;;
+              npm)   npm ci ;;
+              pnpm)  pnpm install --frozen-lockfile ;;
+              yarn)  yarn install --immutable ;;
+            esac
+          fi
+
+      - if: ${{ inputs.lint-cmd != '' }}
+        name: Lint
+        run: ${{ inputs.lint-cmd }}
+
+      - if: ${{ inputs.typecheck-cmd != '' }}
+        name: Typecheck
+        run: ${{ inputs.typecheck-cmd }}
+
+      - if: ${{ inputs.build-cmd != '' }}
+        name: Build
+        run: ${{ inputs.build-cmd }}
+
+      - if: ${{ inputs.test-cmd != '' }}
+        name: Test
+        run: ${{ inputs.test-cmd }}

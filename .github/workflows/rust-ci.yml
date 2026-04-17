@@ -1,0 +1,161 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reusable Rust CI — callable from any resq-software/* repo.
+# Pairs with security-scan.yml (which should run alongside this in
+# consumer repos). SHA-pinned actions with trailing `# <tag>` so
+# Dependabot can still propose updates.
+
+name: rust-ci
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: Rust toolchain (stable|nightly|1.83.0|etc).
+        type: string
+        required: false
+        default: stable
+      components:
+        description: Comma-separated rustup components.
+        type: string
+        required: false
+        default: rustfmt,clippy
+      working-directory:
+        description: Cargo workspace root (defaults to repo root).
+        type: string
+        required: false
+        default: "."
+      run-fmt:
+        type: boolean
+        required: false
+        default: true
+      run-clippy:
+        type: boolean
+        required: false
+        default: true
+      run-test:
+        type: boolean
+        required: false
+        default: true
+      run-deny:
+        description: Run cargo-deny (requires deny.toml in working-directory).
+        type: boolean
+        required: false
+        default: false
+      run-coverage:
+        description: Run cargo-llvm-cov and upload to Codecov.
+        type: boolean
+        required: false
+        default: false
+      clippy-flags:
+        description: Extra flags passed to cargo clippy.
+        type: string
+        required: false
+        default: "--all-targets --all-features -- -D warnings"
+      test-flags:
+        description: Extra flags passed to cargo test.
+        type: string
+        required: false
+        default: "--all-features --workspace"
+      timeout-minutes:
+        type: number
+        required: false
+        default: 20
+
+permissions:
+  contents: read
+
+jobs:
+  fmt:
+    if: ${{ inputs.run-fmt }}
+    name: Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # stable
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    if: ${{ inputs.run-clippy }}
+    name: Clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # stable
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          components: ${{ inputs.components }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+      - run: cargo clippy ${{ inputs.clippy-flags }}
+
+  test:
+    if: ${{ inputs.run-test }}
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # stable
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          components: ${{ inputs.components }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+      - if: ${{ !inputs.run-coverage }}
+        run: cargo test ${{ inputs.test-flags }}
+      - if: ${{ inputs.run-coverage }}
+        uses: taiki-e/install-action@a416ddeedbd748e9e3f037655f22dc2ee45c17ae  # cargo-llvm-cov
+        with:
+          tool: cargo-llvm-cov
+      - if: ${{ inputs.run-coverage }}
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+      - if: ${{ inputs.run-coverage && always() }}
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2  # v6.0.0
+        with:
+          files: ${{ inputs.working-directory }}/lcov.info
+          fail_ci_if_error: false
+
+  deny:
+    if: ${{ inputs.run-deny }}
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: EmbarkStudios/cargo-deny-action@34899fc7ba81ca6268d5947a7a16b4649013fea1  # v2
+        with:
+          manifest-path: ${{ inputs.working-directory }}/Cargo.toml
+          arguments: --all-features

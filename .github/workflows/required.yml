@@ -1,0 +1,140 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reusable CI aggregator. Each consumer repo calls this with a `lang`
+# input matching its `lang` custom-repo-property value. The workflow
+# dispatches to the matching language CI (rust|python|node|polyglot)
+# and always runs the org-wide security scan in parallel. The final
+# `required` job needs all upstream jobs — Ruleset A requires the
+# `required` status-check context.
+#
+# SHA-pinned actions with trailing `# <tag>` for Dependabot.
+
+name: required
+
+on:
+  workflow_call:
+    inputs:
+      lang:
+        description: One of rust|python|node|polyglot.
+        type: string
+        required: true
+      working-directory:
+        type: string
+        required: false
+        default: "."
+      codeql-languages:
+        description: JSON array for security-scan CodeQL input.
+        type: string
+        required: false
+        default: "[]"
+      enable-semgrep:
+        type: boolean
+        required: false
+        default: false
+      enable-gitleaks:
+        type: boolean
+        required: false
+        default: false
+      node-package-manager:
+        type: string
+        required: false
+        default: "bun"
+      node-lint-cmd:
+        type: string
+        required: false
+        default: ""
+      node-typecheck-cmd:
+        type: string
+        required: false
+        default: ""
+      node-test-cmd:
+        type: string
+        required: false
+        default: ""
+      node-build-cmd:
+        type: string
+        required: false
+        default: ""
+      rust-run-coverage:
+        type: boolean
+        required: false
+        default: false
+      rust-run-deny:
+        type: boolean
+        required: false
+        default: false
+      python-versions:
+        type: string
+        required: false
+        default: '["3.11","3.12","3.13"]'
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: read
+
+jobs:
+  security:
+    name: Security
+    uses: ./.github/workflows/security-scan.yml
+    with:
+      languages: ${{ inputs.codeql-languages }}
+      enable-semgrep: ${{ inputs.enable-semgrep }}
+      enable-gitleaks: ${{ inputs.enable-gitleaks }}
+    secrets: inherit
+
+  rust:
+    if: ${{ inputs.lang == 'rust' || inputs.lang == 'polyglot' }}
+    name: Rust CI
+    uses: ./.github/workflows/rust-ci.yml
+    with:
+      working-directory: ${{ inputs.working-directory }}
+      run-coverage: ${{ inputs.rust-run-coverage }}
+      run-deny: ${{ inputs.rust-run-deny }}
+
+  python:
+    if: ${{ inputs.lang == 'python' || inputs.lang == 'polyglot' }}
+    name: Python CI
+    uses: ./.github/workflows/python-ci.yml
+    with:
+      working-directory: ${{ inputs.working-directory }}
+      python-versions: ${{ inputs.python-versions }}
+
+  node:
+    if: ${{ inputs.lang == 'node' || inputs.lang == 'polyglot' }}
+    name: Node CI
+    uses: ./.github/workflows/node-ci.yml
+    with:
+      working-directory: ${{ inputs.working-directory }}
+      package-manager: ${{ inputs.node-package-manager }}
+      lint-cmd: ${{ inputs.node-lint-cmd }}
+      typecheck-cmd: ${{ inputs.node-typecheck-cmd }}
+      test-cmd: ${{ inputs.node-test-cmd }}
+      build-cmd: ${{ inputs.node-build-cmd }}
+
+  # `required` is the single status-check context consumed by Ruleset A.
+  # Passes iff every dispatched language job AND security passed.
+  # Skipped jobs (lang-mismatch `if:` gates) are treated as success.
+  required:
+    name: required
+    needs: [security, rust, python, node]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate upstream results
+        env:
+          SECURITY_RESULT: ${{ needs.security.result }}
+          RUST_RESULT: ${{ needs.rust.result }}
+          PYTHON_RESULT: ${{ needs.python.result }}
+          NODE_RESULT: ${{ needs.node.result }}
+        run: |
+          set -eu
+          fail=0
+          for r in "$SECURITY_RESULT" "$RUST_RESULT" "$PYTHON_RESULT" "$NODE_RESULT"; do
+            case "$r" in
+              success|skipped|"") ;;
+              *) echo "::error::Upstream job returned: $r"; fail=1 ;;
+            esac
+          done
+          exit "$fail"
