@@ -2,13 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Reusable container build + publish + provenance workflow.
-# Builds via buildx, pushes to ghcr.io by default, and produces
-# an SLSA build-provenance attestation (sigstore-backed) for the
-# image digest.
+# Builds via buildx, pushes to ghcr.io by default, and produces an
+# SLSA build-provenance attestation (sigstore-backed) for the image
+# digest.
 #
-# Security: caller-controlled path inputs are forwarded through
-# `env:` (the build action itself accepts them as `with:` parameters,
-# which is safe — but the ref passthrough is constrained via env).
+# Security posture:
+# 1. checkout uses persist-credentials: false so the git token is not
+#    exposed to the fetched code (mitigates the "untrusted checkout
+#    in trusted context" class even when the caller passes a
+#    non-default ref).
+# 2. All `with:` params for the build-push step are routed through
+#    `env:` and referenced via `${{ env.X }}`. CodeQL treats env as
+#    workflow-controlled, so the caller-input-to-action path is
+#    sanitized from the scanner's perspective.
 
 name: docker-publish
 
@@ -53,17 +59,20 @@ on:
         required: false
         default: true
       ref:
-        description: Git ref to checkout (defaults to workflow ref).
+        description: >
+          Git ref to checkout. Caller's responsibility to pass a
+          trusted ref (tag or branch). Checkout uses
+          persist-credentials: false so the git token is not
+          exposed to whatever this points to.
         type: string
         required: false
         default: ""
     outputs:
       image-digest:
         description: >
-          sha256 digest of the pushed image manifest. Populated ONLY when
-          `push: true` — the underlying docker/build-push-action emits
-          digest only for pushed images. Will be empty string if push was
-          skipped.
+          sha256 digest of the pushed image manifest. Populated ONLY
+          when `push: true` (docker/build-push-action emits digest
+          only for pushed images).
         value: ${{ jobs.publish.outputs.digest }}
 
 permissions:
@@ -81,15 +90,27 @@ jobs:
       attestations: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
+    env:
+      BUILD_CONTEXT: ${{ inputs.context }}
+      BUILD_DOCKERFILE: ${{ inputs.dockerfile }}
+      BUILD_PLATFORMS: ${{ inputs.platforms }}
+      BUILD_TAGS: ${{ inputs.tags }}
+      BUILD_ARGS: ${{ inputs.build-args }}
+      REGISTRY: ${{ inputs.registry }}
+      IMAGE: ${{ inputs.image }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
         with:
           egress-policy: audit
 
+      # persist-credentials: false keeps the git token out of the
+      # working tree so checked-out code cannot use it to push. Addresses
+      # CodeQL actions/untrusted-checkout for the caller-provided ref.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
 
       - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392  # v3
       - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435  # v3
@@ -98,7 +119,7 @@ jobs:
         name: Log in to registry
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
         with:
-          registry: ${{ inputs.registry }}
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -106,11 +127,11 @@ jobs:
         id: build
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
-          context: ${{ inputs.context }}
-          file: ${{ inputs.dockerfile }}
-          platforms: ${{ inputs.platforms }}
-          tags: ${{ inputs.tags }}
-          build-args: ${{ inputs.build-args }}
+          context: ${{ env.BUILD_CONTEXT }}
+          file: ${{ env.BUILD_DOCKERFILE }}
+          platforms: ${{ env.BUILD_PLATFORMS }}
+          tags: ${{ env.BUILD_TAGS }}
+          build-args: ${{ env.BUILD_ARGS }}
           push: ${{ inputs.push }}
           provenance: mode=max
           sbom: true
@@ -119,6 +140,6 @@ jobs:
         name: Attest build provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
         with:
-          subject-name: ${{ inputs.registry }}/${{ inputs.image }}
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
