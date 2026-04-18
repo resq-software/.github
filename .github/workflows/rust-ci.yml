@@ -133,7 +133,7 @@ jobs:
           # shellcheck disable=SC2086
           cargo test $FLAGS
       - if: ${{ inputs.run-coverage }}
-        uses: taiki-e/install-action@a2352fc6ce487f030a3aa709482d57823eadfb37  # v2
+        uses: taiki-e/install-action@a2352fc6ce487f030a3aa709482d57823eadfb37  # v2.75.16
         with:
           tool: cargo-llvm-cov
       - if: ${{ inputs.run-coverage }}
@@ -166,7 +166,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # stable
         with:
           toolchain: ${{ inputs.toolchain }}
-      - uses: taiki-e/install-action@a2352fc6ce487f030a3aa709482d57823eadfb37  # v2
+      - uses: taiki-e/install-action@a2352fc6ce487f030a3aa709482d57823eadfb37  # v2.75.16
         with:
           tool: cargo-deny
       - run: cargo deny --all-features check
