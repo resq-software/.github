@@ -57,9 +57,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          excluded=$(gh api "/orgs/$ORG/rulesets/$RULESET_ID" \
-            --jq '.conditions.repository_name.exclude // [] | join(" ")')
-          echo "exempted-by-ruleset: ${excluded:-<none>}"
+          # Ruleset endpoint requires admin:org scope. If the available
+          # token (GITHUB_TOKEN by default) can't read it, degrade
+          # gracefully: treat the exclude list as empty. Informational;
+          # does not change gap detection for repos that are actually
+          # governed.
+          if excluded=$(gh api "/orgs/$ORG/rulesets/$RULESET_ID" \
+               --jq '.conditions.repository_name.exclude // [] | join(" ")' 2>/dev/null); then
+            echo "exempted-by-ruleset: ${excluded:-<none>}"
+          else
+            excluded=""
+            echo "::warning::Could not read /orgs/$ORG/rulesets/$RULESET_ID — assuming exclude list is empty. Set SYNC_TOKEN (with admin:org scope) at the org or repo level for authoritative results."
+          fi
 
           repos=$(gh api --paginate "/orgs/$ORG/repos?type=all&per_page=100" \
             --jq '.[] | select(.archived == false) | .name')
