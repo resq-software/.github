@@ -84,6 +84,15 @@ jobs:
             for f in $files; do
               content=$(gh api "/repos/$ORG/$repo/contents/.github/workflows/$f?ref=$default" \
                 --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true)
+
+              # Skip workflows that only trigger on workflow_call (reusables).
+              # A reusable workflow never fires on pull_request even if it has
+              # a job named `required`, so matching one would false-green.
+              on_block=$(printf '%s\n' "$content" | awk '/^on:/{flag=1; next} flag && /^[a-zA-Z]/{flag=0} flag')
+              if ! printf '%s\n' "$on_block" | grep -Eq '^[[:space:]]*(pull_request|push):'; then
+                continue
+              fi
+
               # Match either top-level `required:` job key or `name: required`.
               if printf '%s\n' "$content" | grep -Eq '^  required:[[:space:]]*$|^    name:[[:space:]]*"?required"?[[:space:]]*$'; then
                 has_required=yes
