@@ -1,0 +1,39 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Emits the `required` status-check context consumed by org ruleset
+# `default-branch-baseline` (id 15191038) on PRs and pushes to main.
+#
+# This repo publishes reusable workflows and doesn't have language CI
+# of its own, so the gate is a pass-through. The actual validation of
+# workflow files (actionlint, zizmor, CodeQL actions-language, etc.)
+# runs in security-scan.yml which is called via a separate caller.
+#
+# Without this file, every PR on resq-software/.github hangs on
+# "Expected — Waiting for status to be reported" because reusable
+# workflows (on: workflow_call) never fire on pull_request events.
+
+name: required-gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  required:
+    name: required
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - run: echo "ok — .github repo has no language CI to gate on"

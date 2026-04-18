@@ -1,0 +1,223 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Weekly org-wide audit of the `required` status-check gate.
+# Verifies every non-archived repo under resq-software/ has at least
+# one CI workflow job that emits the `required` status context
+# consumed by org ruleset `default-branch-baseline` (id 15191038).
+#
+# Without this job, PRs on that repo hang in "Expected — Waiting for
+# status to be reported" state and are blocked from merge.
+#
+# If gaps are found, opens or updates a tracking issue on this repo
+# with the list of missing repos and the reference fix (a terminal
+# job that `needs:` all real jobs with `if: always()`).
+#
+# Private repos are audited only when a repo-scoped PAT is available
+# as the `SYNC_TOKEN` org secret; otherwise the run falls back to
+# GITHUB_TOKEN and reports unreachable private repos separately.
+
+name: audit-required-job
+
+on:
+  schedule:
+    # Monday 08:00 UTC (03:00-04:00 US Eastern, DST-dependent)
+    - cron: '0 8 * * MON'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: audit-required-job
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ORG: resq-software
+      RULESET_ID: "15191038"
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+
+      - name: Scan org for missing `required` job
+        id: scan
+        env:
+          # Prefer an org-scoped PAT (e.g. SYNC_TOKEN) for private repo
+          # access; fall back to GITHUB_TOKEN (public repos only).
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          excluded=$(gh api "/orgs/$ORG/rulesets/$RULESET_ID" \
+            --jq '.conditions.repository_name.exclude // [] | join(" ")')
+          echo "exempted-by-ruleset: ${excluded:-<none>}"
+
+          repos=$(gh api --paginate "/orgs/$ORG/repos?type=all&per_page=100" \
+            --jq '.[] | select(.archived == false) | .name')
+
+          gap_list=""
+          unreachable_list=""
+          exempt_list=""
+          ok_count=0
+          gap_count=0
+
+          for repo in $repos; do
+            default=$(gh api "/repos/$ORG/$repo" --jq '.default_branch' 2>/dev/null || echo "")
+            if [ -z "$default" ]; then
+              unreachable_list="${unreachable_list}- $repo"$'\n'
+              continue
+            fi
+
+            files=$(gh api "/repos/$ORG/$repo/contents/.github/workflows?ref=$default" \
+              --jq '.[] | .name' 2>/dev/null | grep -E '\.ya?ml$' || true)
+
+            has_required=no
+            for f in $files; do
+              content=$(gh api "/repos/$ORG/$repo/contents/.github/workflows/$f?ref=$default" \
+                --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true)
+
+              # Skip workflows that only trigger on workflow_call (reusables).
+              # A reusable workflow never fires on pull_request even if it has
+              # a job named `required`, so matching one would false-green.
+              on_block=$(printf '%s\n' "$content" | awk '/^on:/{flag=1; next} flag && /^[a-zA-Z]/{flag=0} flag')
+              if ! printf '%s\n' "$on_block" | grep -Eq '^[[:space:]]*(pull_request|push):'; then
+                continue
+              fi
+
+              # Match either top-level `required:` job key or `name: required`.
+              if printf '%s\n' "$content" | grep -Eq '^  required:[[:space:]]*$|^    name:[[:space:]]*"?required"?[[:space:]]*$'; then
+                has_required=yes
+                break
+              fi
+            done
+
+            if [ "$has_required" = yes ]; then
+              ok_count=$((ok_count + 1))
+              continue
+            fi
+
+            is_exempt=no
+            for e in $excluded; do
+              if [ "$e" = "$repo" ]; then is_exempt=yes; break; fi
+            done
+            if [ "$is_exempt" = yes ]; then
+              exempt_list="${exempt_list}- $repo"$'\n'
+              continue
+            fi
+
+            gap_list="${gap_list}- $repo (branch=\`$default\`)"$'\n'
+            gap_count=$((gap_count + 1))
+          done
+
+          echo "summary: ok=$ok_count  gaps=$gap_count  exempt=$(printf '%s' "$exempt_list" | grep -c '^-' || true)"
+
+          {
+            echo "gap_count=$gap_count"
+            echo "gap_list<<GAPEOF"
+            printf '%s' "${gap_list:-*(none)*
+          }"
+            echo "GAPEOF"
+            echo "unreachable_list<<UNREOF"
+            printf '%s' "${unreachable_list:-*(none)*
+          }"
+            echo "UNREOF"
+            echo "exempt_list<<EXEOF"
+            printf '%s' "${exempt_list:-*(none)*
+          }"
+            echo "EXEOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upsert tracking issue on gaps
+        if: ${{ steps.scan.outputs.gap_count != '0' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GAP_LIST: ${{ steps.scan.outputs.gap_list }}
+          UNREACHABLE_LIST: ${{ steps.scan.outputs.unreachable_list }}
+          EXEMPT_LIST: ${{ steps.scan.outputs.exempt_list }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TITLE: 'chore(governance): required-job audit — repos missing `required` status-check gate'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          body=$(cat <<BODYEOF
+          The weekly \`required\`-job audit detected repos without a CI job emitting the \`required\` status-check context.
+
+          These repos are governed by org ruleset \`default-branch-baseline\` (id 15191038) which requires that context. Until a \`required\` job is added, PRs will hang in "Expected — Waiting for status to be reported" and be blocked from merge.
+
+          ## Repos missing the \`required\` job
+
+          ${GAP_LIST}
+
+          ## Repos exempt via ruleset \`exclude\` list (informational)
+
+          ${EXEMPT_LIST}
+
+          ## Repos unreachable by the audit runner (likely private; set \`SYNC_TOKEN\` for full coverage)
+
+          ${UNREACHABLE_LIST}
+
+          ## Fix
+
+          For each listed repo, append a terminal \`required\` job to the repo's main CI workflow:
+
+          \`\`\`yaml
+            required:
+              name: required
+              needs: [<all-real-job-names>]
+              if: always()
+              runs-on: ubuntu-latest
+              steps:
+                - env:
+                    RESULTS: \${{ toJSON(needs) }}
+                  run: |
+                    set -eu
+                    echo "\$RESULTS" | jq -r 'to_entries[] | "\\(.key)=\\(.value.result)"'
+                    if echo "\$RESULTS" | jq -e 'to_entries[] | select(.value.result != "success" and .value.result != "skipped")' >/dev/null; then
+                      exit 1
+                    fi
+          \`\`\`
+
+          Reference implementation: https://github.com/resq-software/npm/pull/46
+
+          ## Alternative
+
+          If exclusion is intentional, add the repo to the ruleset's \`conditions.repository_name.exclude\` list:
+
+          \`\`\`sh
+          gh api /orgs/resq-software/rulesets/15191038 \\
+            | jq '.conditions.repository_name.exclude += ["<repo-name>"]' \\
+            | gh api --method PUT /orgs/resq-software/rulesets/15191038 --input -
+          \`\`\`
+
+          ---
+          Audit run: ${RUN_URL}
+          BODYEOF
+          )
+
+          existing=$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search 'in:title "required-job audit"' \
+            --limit 1 \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+            echo "updated issue #$existing"
+          else
+            gh issue create \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TITLE" \
+              --body "$body"
+          fi
