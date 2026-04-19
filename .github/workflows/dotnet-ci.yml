@@ -43,6 +43,13 @@ on:
         type: number
         required: false
         default: 20
+      submodules:
+        description: >
+          Checkout submodules. Pass 'true' for top-level,
+          'recursive' for nested, or '' to skip (default).
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -61,6 +68,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: ${{ inputs.submodules }}
       - uses: actions/setup-dotnet@3e891b0cb619bf60e2c25674b222b8940e2c1c25  # v4
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
@@ -94,6 +103,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: ${{ inputs.submodules }}
       - uses: actions/setup-dotnet@3e891b0cb619bf60e2c25674b222b8940e2c1c25  # v4
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
@@ -119,6 +130,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: ${{ inputs.submodules }}
       - uses: actions/setup-dotnet@3e891b0cb619bf60e2c25674b222b8940e2c1c25  # v4
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
