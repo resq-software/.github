@@ -64,6 +64,13 @@ on:
         type: boolean
         required: false
         default: true
+      submodules:
+        description: >
+          Checkout submodules for the CodeQL job (autobuild may need them).
+          Pass 'true' for top-level, 'recursive' for nested, or '' to skip.
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -92,6 +99,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          submodules: ${{ inputs.submodules }}
       - name: Initialize CodeQL
         uses: github/codeql-action/init@5c8a8a642e79153f5d047b10ec1cba1d1cc65699  # v3
         with:

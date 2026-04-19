@@ -88,6 +88,13 @@ on:
         type: string
         required: false
         default: ""
+      submodules:
+        description: >
+          Checkout submodules for language-CI and CodeQL jobs. Pass 'true'
+          for top-level, 'recursive' for nested, or '' to skip (default).
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -124,6 +131,7 @@ jobs:
       languages: ${{ inputs.codeql-languages }}
       enable-semgrep: ${{ inputs.enable-semgrep }}
       enable-gitleaks: ${{ inputs.enable-gitleaks }}
+      submodules: ${{ inputs.submodules }}
     secrets: inherit
 
   rust:
@@ -167,6 +175,7 @@ jobs:
       dotnet-version: ${{ inputs.dotnet-version }}
       solution: ${{ inputs.dotnet-solution }}
       working-directory: ${{ inputs.working-directory }}
+      submodules: ${{ inputs.submodules }}
 
   cpp:
     needs: [validate-lang]
