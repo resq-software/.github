@@ -60,7 +60,6 @@ The template auto-populates with:
 | [programs](https://github.com/resq-software/programs) | Solana Anchor on-chain programs |
 | [landing](https://github.com/resq-software/landing) | Marketing site |
 | [docs](https://github.com/resq-software/docs) | Official documentation (Mintlify) |
-| [resq-proto](https://github.com/resq-software/resq-proto) | Canonical Protobuf schemas |
 | [dev](https://github.com/resq-software/dev) | One-command developer onboarding |
 
 ## License
