@@ -56,6 +56,16 @@ on:
         type: string
         required: false
         default: ""
+      node-cache-dependency-path:
+        description: >-
+          Forwarded to node-ci.yml → actions/setup-node. Polyglot repos
+          whose lockfile lives in a subdirectory (e.g. viz's
+          `src/ResQ.Viz.Web/package-lock.json`) must set this, else
+          setup-node errors with "Dependencies lock file is not found".
+          Default empty = root-level detection (matches prior behaviour).
+        type: string
+        required: false
+        default: ""
       rust-run-coverage:
         type: boolean
         required: false
@@ -165,6 +175,7 @@ jobs:
       typecheck-cmd: ${{ inputs.node-typecheck-cmd }}
       test-cmd: ${{ inputs.node-test-cmd }}
       build-cmd: ${{ inputs.node-build-cmd }}
+      cache-dependency-path: ${{ inputs.node-cache-dependency-path }}
 
   dotnet:
     needs: [validate-lang]

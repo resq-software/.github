@@ -31,6 +31,16 @@ on:
         type: string
         required: false
         default: "."
+      cache-dependency-path:
+        description: >-
+          Forwarded to actions/setup-node's `cache-dependency-path`.
+          Required when the lockfile lives outside the repo root
+          (e.g. `src/Web/package-lock.json` in a polyglot repo).
+          Default empty — setup-node falls back to repo-root detection,
+          matching the prior behaviour for consumers that don't set it.
+        type: string
+        required: false
+        default: ""
       install-cmd:
         description: Override install command. Empty = pm default.
         type: string
@@ -93,6 +103,7 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
           cache: ${{ inputs.package-manager == 'yarn' && 'yarn' || inputs.package-manager == 'pnpm' && 'pnpm' || 'npm' }}
+          cache-dependency-path: ${{ inputs.cache-dependency-path }}
 
       - name: Install
         env:
