@@ -89,6 +89,15 @@ jobs:
     name: CodeQL (${{ matrix.language }})
     if: ${{ inputs.languages != '' && inputs.languages != '[]' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      # `actions: read` is required by github/codeql-action's telemetry —
+      # init/analyze each call `GET /repos/{owner}/{repo}/actions/runs/{run_id}`.
+      # Without the scope every step ends in
+      #   ##[error]Resource not accessible by integration
+      # and the job fails. Read-only; grants no write capability.
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -184,6 +193,12 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      # Required by github/codeql-action/upload-sarif's telemetry call
+      # to `GET /repos/{owner}/{repo}/actions/runs/{run_id}`. Without
+      # this the upload step ends in
+      #   ##[error]Resource not accessible by integration
+      # and fails the job. Read-only; grants no write capability.
+      actions: read
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
