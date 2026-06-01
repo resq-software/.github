@@ -72,6 +72,21 @@ on:
         required: false
         default: ""
 
+    # Declared so callers can forward these by name instead of `secrets:
+    # inherit` (which hands this workflow ALL of the caller's secrets and
+    # trips zizmor's `secrets-inherit` audit). All optional, each gated by
+    # its matching `enable-*` input, so omitting one is a no-op.
+    secrets:
+      GITLEAKS_LICENSE:
+        description: GitLeaks license key. Used only when enable-gitleaks is true.
+        required: false
+      SEMGREP_APP_TOKEN:
+        description: Semgrep App token. Used only when enable-semgrep is true.
+        required: false
+      SNYK_TOKEN:
+        description: Snyk token. Used only when enable-snyk is true.
+        required: false
+
 permissions:
   contents: read
   security-events: write   # CodeQL + SARIF uploads
