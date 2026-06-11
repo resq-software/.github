@@ -247,7 +247,9 @@ jobs:
         run: |
           set -euxo pipefail
           bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
-          ./actionlint -color
+          # Skip gh-aw generated *.lock.yml (machine-generated; validated by `gh aw lint`).
+          files=$(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) ! -name '*.lock.yml' | sort)
+          if [ -n "$files" ]; then ./actionlint -color $files; else echo 'no hand-written workflows to lint'; fi
 
   # ── Semgrep (opt-in SAST) ─────────────────────────────────────────────────
   semgrep:
