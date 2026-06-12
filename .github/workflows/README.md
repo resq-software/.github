@@ -3,6 +3,40 @@
 Org-wide CI building blocks. Callable from any `resq-software/*` repo via
 `uses: resq-software/.github/.github/workflows/<name>.yml@main`.
 
+## `repo-standards.yml`
+
+Template/standards conformance check. Validates that a repo has a detectable
+`LICENSE`, a non-stub `README.md` with a title, and no leftover
+`{{PLACEHOLDER}}` tokens or `ResQ README Template` scaffold markers.
+
+It is already wired into `required.yml` (so every consumer repo inherits it
+through the `required` status check) and into `required-gate.yml` (so this
+repo dogfoods it). You don't call it directly unless you want a standalone
+conformance job.
+
+**Warn-by-default**, matching the org's audit → enforce pattern
+(harden-runner audit, rulesets evaluate). Violations surface as
+`::warning` annotations without failing the build. Once a repo is clean,
+flip enforcement on by passing `repo-standards-strict: true` to
+`required.yml`:
+
+```yaml
+jobs:
+  ci:
+    uses: resq-software/.github/.github/workflows/required.yml@main
+    with:
+      lang: rust
+      repo-standards-strict: true   # turn conformance violations into a hard failure
+```
+
+### Inputs (when called directly)
+
+| Input | Type | Default | Notes |
+| :-- | :-- | :-- | :-- |
+| `strict` | bool | `false` | Fail the job on any violation. Default warns only. |
+| `require-license` | bool | `true` | Require a `LICENSE`/`COPYING` file at the repo root. |
+| `readme-min-bytes` | string | `"500"` | README smaller than this is treated as a stub. |
+
 ## `security-scan.yml`
 
 Defense-in-depth security scan. All third-party `uses:` refs are SHA-pinned
