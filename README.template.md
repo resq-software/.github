@@ -89,14 +89,19 @@
 ## Table of Contents
 
 - [Overview](#overview)
+- [Demo](#demo)
 - [Features](#features)
+- [Prerequisites](#prerequisites)
 - [Install](#install)
 - [Quick Start](#quick-start)
 - [Usage](#usage)
 - [Configuration](#configuration)
 - [Contributing](#contributing)
+- [Security](#security)
+- [Support](#support)
 - [Changelog](#changelog)
 - [License](#license)
+- [Acknowledgements](#acknowledgements)
 
 ---
 
@@ -123,13 +128,46 @@ It {{CORE_VALUE_PROPOSITION}}.
 
 ---
 
+## Demo
+
+<!-- DELETE this section for libraries with no visual/CLI surface.
+     A 5–15s GIF or a single annotated screenshot earns more trust than
+     three paragraphs. Record terminal sessions with vhs or asciinema;
+     keep media in assets/ and reference it relatively.
+       - GIF/screenshot:  ![{{PROJECT_NAME}} demo](assets/demo.gif)
+       - Hosted video:    link to it; GitHub won't autoplay large files.
+     Show explicit dimensions to avoid layout shift. -->
+
+<p align="center">
+  <img src="assets/demo.gif" alt="{{PROJECT_NAME}} demo" width="720" />
+</p>
+
+> **Try it live:** [{{LIVE_DEMO_URL}}]({{LIVE_DEMO_URL}}) · [Playground](https://resq.software)
+
+---
+
 ## Features
 
-<!-- Bullet-point highlights. Keep to ≤ 8 items; link to docs for depth. -->
+<!-- Bullet-point highlights. Keep to ≤ 8 items; link to docs for depth.
+     Lead each bullet with a concrete capability, not a marketing adjective. -->
 
 - **{{FEATURE_1}}** — {{FEATURE_1_DESCRIPTION}}
 - **{{FEATURE_2}}** — {{FEATURE_2_DESCRIPTION}}
 - **{{FEATURE_3}}** — {{FEATURE_3_DESCRIPTION}}
+
+---
+
+## Prerequisites
+
+<!-- The runtime/toolchain versions a user needs BEFORE installing. Delete
+     rows that don't apply; delete the whole section for zero-dependency
+     packages. Pin to the versions CI actually tests against so "works on
+     my machine" gaps surface here, not in an issue. -->
+
+| Requirement | Minimum | Notes |
+|-------------|---------|-------|
+| `{{RUNTIME}}` | `{{MIN_VERSION}}` | {{RUNTIME_NOTE}} |
+| Platform | Linux / macOS / Windows | {{PLATFORM_NOTE}} |
 
 ---
 
@@ -280,6 +318,30 @@ All PRs must follow the `type(scope): subject` format — see the table below.
 | `BREAKING CHANGE` footer or `!` suffix | Major bump (`x.0.0`) |
 | `docs:` `style:` `refactor:` `test:` `chore:` | No version bump |
 
+**CI gate:** every PR must keep the `required` status check green (org
+ruleset `default-branch-baseline`). That single check aggregates language
+CI, the security scan, and repo-standards conformance — see
+[resq-software/.github](https://github.com/resq-software/.github).
+
+---
+
+## Security
+
+Found a vulnerability? **Do not open a public issue.** Follow the
+coordinated-disclosure process in [`SECURITY.md`](./SECURITY.md) (inherited
+org-wide from [resq-software/.github](https://github.com/resq-software/.github/blob/main/SECURITY.md)).
+
+This project ships SHA-pinned CI actions and is scanned for vulnerable
+dependencies and leaked secrets on every push.
+
+---
+
+## Support
+
+- 📖 **Docs:** [docs.resq.software](https://docs.resq.software)
+- 💬 **Questions / help:** see [`SUPPORT.md`](./SUPPORT.md)
+- 🐛 **Bugs & features:** [open an issue](https://github.com/resq-software/{{REPO}}/issues/new/choose)
+
 ---
 
 ## Changelog
@@ -296,6 +358,17 @@ See [CHANGELOG.md](./CHANGELOG.md) for the full release history.
 Copyright 2026 ResQ
 
 Licensed under the [Apache License, Version 2.0](./LICENSE).
+
+---
+
+## Acknowledgements
+
+<!-- OPTIONAL — delete if not relevant. Credit the people, prior art, and
+     dependencies that made this possible. Honest attribution reads as
+     confidence, not weakness. -->
+
+- Built on the [ResQ platform](https://resq.software).
+- {{ACKNOWLEDGEMENT_1}}
 
 ---
 
