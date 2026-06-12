@@ -1,0 +1,124 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reusable repo-conformance check. Validates that a consumer repo meets
+# the org template/standards baseline:
+#   * a detectable LICENSE file (Apache-2.0 across the org)
+#   * a non-stub README.md with a title and no leftover template tokens
+#   * no unrendered {{PLACEHOLDER}} tokens or template scaffold markers
+#
+# Wired into required.yml (consumer repos) and required-gate.yml (this
+# repo), so the single `required` status check (gated by org ruleset
+# `default-branch-baseline`, id 15191038) also covers template
+# conformance. Warn-by-default to match the org's audit -> enforce
+# rollout pattern (harden-runner audit, rulesets evaluate). Flip
+# `strict: true` once a repo is clean to turn violations into a hard
+# CI failure.
+#
+# Security: inputs that reach `run:` are forwarded through `env:` and
+# referenced as "$VAR" to prevent template-time expansion of
+# caller-controlled strings into the shell.
+
+name: repo-standards
+
+on:
+  workflow_call:
+    inputs:
+      strict:
+        description: Fail the job on any violation. Default warns (annotations only).
+        type: boolean
+        required: false
+        default: false
+      require-license:
+        description: Require a detectable LICENSE/COPYING file at the repo root.
+        type: boolean
+        required: false
+        default: true
+      readme-min-bytes:
+        description: Minimum README.md size in bytes; smaller is treated as a stub.
+        type: string
+        required: false
+        default: "500"
+
+permissions:
+  contents: read
+
+jobs:
+  repo-standards:
+    name: repo-standards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Check repo conformance
+        env:
+          STRICT: ${{ inputs.strict }}
+          REQUIRE_LICENSE: ${{ inputs.require-license }}
+          README_MIN_BYTES: ${{ inputs.readme-min-bytes }}
+        run: |
+          set -eu
+          violations=0
+          note() {
+            printf '::warning title=repo-standards::%s\n' "$1"
+            violations=$((violations + 1))
+          }
+
+          # ── LICENSE ──────────────────────────────────────────────────────
+          # POSIX glob loop (not ls/find) so shellcheck stays happy and odd
+          # filenames are handled safely. Unmatched globs stay literal, so the
+          # `[ -e ]` test is false for them.
+          if [ "$REQUIRE_LICENSE" = "true" ]; then
+            license_found=no
+            for f in LICENSE LICENSE.* COPYING COPYING.*; do
+              if [ -e "$f" ]; then license_found=yes; break; fi
+            done
+            if [ "$license_found" = yes ]; then
+              echo "ok: LICENSE present"
+            else
+              note "No LICENSE/COPYING file at repo root (org standard: Apache-2.0)."
+            fi
+          fi
+
+          # ── README ───────────────────────────────────────────────────────
+          if [ ! -f README.md ]; then
+            note "No README.md at repo root."
+          else
+            bytes=$(wc -c < README.md | tr -d ' ')
+            if [ "$bytes" -lt "$README_MIN_BYTES" ]; then
+              note "README.md is a stub ($bytes bytes < $README_MIN_BYTES required)."
+            fi
+            if ! grep -qE '^[[:space:]]*(#[[:space:]]|<h1)' README.md; then
+              note "README.md has no top-level title (a '# Heading' or '<h1>')."
+            fi
+            # Count DISTINCT {{TOKEN}} occurrences, excluding the literal
+            # meta-example {{PLACEHOLDER}} (which docs legitimately mention).
+            # An unrendered template carries many distinct tokens
+            # ({{PROJECT_NAME}}, {{REPO}}, ...); a doc mentioning the syntax
+            # once should not trip. Threshold: 3 distinct tokens.
+            ph_count=$(grep -oE '\{\{[A-Z0-9_]+\}\}' README.md \
+              | grep -vxF '{{PLACEHOLDER}}' | sort -u | wc -l | tr -d ' ')
+            if [ "$ph_count" -ge 3 ]; then
+              note "README.md still has $ph_count distinct {{PLACEHOLDER}} tokens (unrendered template?)."
+            fi
+            if grep -q 'ResQ README Template' README.md; then
+              note "README.md still contains the template scaffold marker comment."
+            fi
+          fi
+
+          # ── Summary ──────────────────────────────────────────────────────
+          if [ "$violations" -eq 0 ]; then
+            echo "repo-standards: all checks passed."
+            exit 0
+          fi
+          echo "repo-standards: $violations violation(s) found."
+          if [ "$STRICT" = "true" ]; then
+            echo "::error title=repo-standards::strict mode — failing on $violations violation(s)."
+            exit 1
+          fi
+          echo "repo-standards: warn mode — not failing the build. Set strict:true to enforce."
+          exit 0

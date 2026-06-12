@@ -28,12 +28,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Dogfood the org template/standards check on this repo itself.
+  repo-standards:
+    name: Repo standards
+    uses: ./.github/workflows/repo-standards.yml
+
   required:
     name: required
+    needs: [repo-standards]
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
         with:
           egress-policy: audit
-      - run: echo "ok — .github repo has no language CI to gate on"
+      - name: Evaluate upstream results
+        env:
+          REPO_STANDARDS_RESULT: ${{ needs.repo-standards.result }}
+        run: |
+          set -eu
+          case "$REPO_STANDARDS_RESULT" in
+            success|skipped|"") echo "ok — .github repo has no language CI to gate on" ;;
+            *) echo "::error::repo-standards returned: $REPO_STANDARDS_RESULT"; exit 1 ;;
+          esac

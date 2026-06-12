@@ -29,15 +29,21 @@ ResQ is a mission-critical autonomous platform for decentralized coordination in
 
 ## Get started
 
-Install the `resq` CLI and onboard a cloned repo in two curls:
+Install the `resq` CLI and onboard a repo in one line:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/resq-software/dev/main/scripts/install-resq.sh | sh
-cd <any resq repo>
-curl -fsSL https://raw.githubusercontent.com/resq-software/dev/main/scripts/install-hooks.sh | sh
+curl -fsSL https://get.resq.software | sh
 ```
 
-The first installs a SHA-verified `resq` binary (with a `cargo install --git` fallback). The second drops the canonical git hooks — copyright, secrets, polyglot format, audit — into the repo and offers a repo-aware `local-pre-push` scaffold.
+This installs a SHA256-verified `resq` binary (with a `cargo install --git` fallback), optionally clones an org repo, and drops the canonical git hooks — copyright, secrets, polyglot format, audit — into it.
+
+Prefer to read before piping to a shell:
+
+```bash
+curl -fsSL https://get.resq.software -o install.sh
+less install.sh
+sh install.sh
+```
 
 ## Links
 

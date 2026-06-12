@@ -138,6 +138,27 @@ It {{CORE_VALUE_PROPOSITION}}.
 <!-- Show the minimal install command for each applicable package manager.
      Delete the blocks that don't apply. -->
 
+<!-- ResQ CLI: keep this block for repos that ship/consume the `resq`
+     binary or document end-to-end onboarding. Delete it for pure library
+     packages where the package-manager blocks below are enough. -->
+
+### ResQ CLI
+
+Install the [`resq`](https://github.com/resq-software/crates) toolchain (and,
+when run inside a repo, the canonical git hooks) in one line:
+
+```sh
+curl -fsSL https://get.resq.software | sh
+```
+
+Prefer to read before piping to a shell:
+
+```sh
+curl -fsSL https://get.resq.software -o install.sh
+less install.sh
+sh install.sh
+```
+
 ### Node / Bun
 
 ```sh

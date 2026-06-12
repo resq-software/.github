@@ -105,6 +105,15 @@ on:
         type: string
         required: false
         default: ""
+      repo-standards-strict:
+        description: >
+          Fail `required` when the repo violates template/standards
+          conformance (LICENSE present, non-stub README, no leftover
+          {{PLACEHOLDER}} tokens). Default warns only — flip to true once
+          the repo is clean.
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -198,10 +207,17 @@ jobs:
       source-dir: ${{ inputs.cpp-source-dir }}
       cmake-flags: ${{ inputs.cpp-cmake-flags }}
 
+  # Template/standards conformance — lang-independent, runs for every repo.
+  repo-standards:
+    name: Repo standards
+    uses: ./.github/workflows/repo-standards.yml
+    with:
+      strict: ${{ inputs.repo-standards-strict }}
+
   # `required` is the single status-check context consumed by Ruleset A.
   required:
     name: required
-    needs: [validate-lang, security, rust, python, node, dotnet, cpp]
+    needs: [validate-lang, security, rust, python, node, dotnet, cpp, repo-standards]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -218,6 +234,7 @@ jobs:
           NODE_RESULT: ${{ needs.node.result }}
           DOTNET_RESULT: ${{ needs.dotnet.result }}
           CPP_RESULT: ${{ needs.cpp.result }}
+          REPO_STANDARDS_RESULT: ${{ needs.repo-standards.result }}
         run: |
           set -eu
           # validate-lang must be success — typo defenses handled there
@@ -226,7 +243,7 @@ jobs:
             exit 1
           fi
           fail=0
-          for r in "$SECURITY_RESULT" "$RUST_RESULT" "$PYTHON_RESULT" "$NODE_RESULT" "$DOTNET_RESULT" "$CPP_RESULT"; do
+          for r in "$SECURITY_RESULT" "$RUST_RESULT" "$PYTHON_RESULT" "$NODE_RESULT" "$DOTNET_RESULT" "$CPP_RESULT" "$REPO_STANDARDS_RESULT"; do
             case "$r" in
               success|skipped|"") ;;
               *) echo "::error::Upstream job returned: $r"; fail=1 ;;
