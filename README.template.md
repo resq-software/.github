@@ -83,6 +83,19 @@
   </a>
 </p>
 
+<!-- NAV ROW — quick links. Keep it to one line; drop entries that don't apply. -->
+<p align="center">
+  <a href="https://docs.resq.software"><b>Documentation</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://resq.software"><b>Website</b></a>
+  &nbsp;·&nbsp;
+  <a href="#quick-start"><b>Quick Start</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/resq-software/{{REPO}}/issues/new/choose"><b>Report Bug</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/resq-software/{{REPO}}/issues/new/choose"><b>Request Feature</b></a>
+</p>
+
 ---
 
 <!-- TABLE OF CONTENTS: include when the README is longer than ~150 lines -->
@@ -192,9 +205,9 @@ curl -fsSL https://get.resq.software | sh
 Prefer to read before piping to a shell:
 
 ```sh
-curl -fsSL https://get.resq.software -o install.sh
-less install.sh
-sh install.sh
+curl -fsSL https://get.resq.software -o install-resq.sh
+less install-resq.sh
+sh install-resq.sh
 ```
 
 ### Node / Bun

@@ -40,9 +40,9 @@ This installs a SHA256-verified `resq` binary (with a `cargo install --git` fall
 Prefer to read before piping to a shell:
 
 ```bash
-curl -fsSL https://get.resq.software -o install.sh
-less install.sh
-sh install.sh
+curl -fsSL https://get.resq.software -o install-resq.sh
+less install-resq.sh
+sh install-resq.sh
 ```
 
 ## Links
