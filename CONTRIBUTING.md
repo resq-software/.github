@@ -4,17 +4,13 @@ Thanks for your interest. This guide applies to every repository under [`resq-so
 
 ## Onboarding
 
-Two curls get you from a bare machine to a working ResQ dev loop:
+One curl gets you from a bare machine to a working ResQ dev loop:
 
 ```bash
-# 1. Install the `resq` CLI (SHA-verified release binary, cargo fallback)
-curl -fsSL https://raw.githubusercontent.com/resq-software/dev/main/scripts/install-resq.sh | sh
-
-# 2. Inside a cloned ResQ repo, install the canonical git hooks
-cd <repo> && curl -fsSL https://raw.githubusercontent.com/resq-software/dev/main/scripts/install-hooks.sh | sh
+curl -fsSL https://get.resq.software | sh
 ```
 
-The second script installs six hooks (pre-commit, commit-msg, prepare-commit-msg, pre-push, post-checkout, post-merge) that delegate to `resq pre-commit`. It also offers to scaffold a repo-type-aware `local-pre-push` (Rust / Python / Node / .NET / C++ / Nix).
+This installs the SHA256-verified `resq` CLI (with a `cargo install --git` fallback), optionally clones a repo, and — when run inside a repo — installs the canonical git hooks: six hooks (pre-commit, commit-msg, prepare-commit-msg, pre-push, post-checkout, post-merge) that delegate to `resq pre-commit`, plus an offer to scaffold a repo-type-aware `local-pre-push` (Rust / Python / Node / .NET / C++ / Nix).
 
 Full contract: [`resq-software/dev/AGENTS.md#git-hooks`](https://github.com/resq-software/dev/blob/main/AGENTS.md#git-hooks).
 
@@ -56,6 +52,23 @@ resq format --check       # exit 1 on any issue — useful in CI
 resq hooks doctor         # report drift between installed and canonical hooks
 resq hooks update         # rewrite installed hooks from embedded templates
 ```
+
+## Engineering standards
+
+Org-wide code standards live in [`docs/standards/`](./docs/standards/) — a
+three-tier model plus a security overlay:
+
+- [**Tier 1 — Baseline**](./docs/standards/01-baseline.md): required toolchain,
+  hard rules, code shape (every repo).
+- [**Tier 2 — Language enforcement**](./docs/standards/02-languages.md): per-language
+  tooling and idioms (TS, Python, C#, Rust, C/C++, Shell, SQL, …).
+- [**Tier 3 — Safety overlay**](./docs/standards/03-safety-overlay.md): JSF / MISRA /
+  NASA Power of Ten for device- and flight-adjacent code.
+- [**Security overlay**](./docs/standards/04-security.md): untrusted input, secrets,
+  auth, crypto.
+
+Per-repo specifics (commands, architecture, deliberate deviations) still live in
+each repo's `AGENTS.md`.
 
 ## Opening a PR
 

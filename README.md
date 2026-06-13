@@ -11,6 +11,7 @@ Organization-wide community health files, issue/PR templates, and the public pro
 | `profile/README.md` | The org profile shown at [github.com/resq-software](https://github.com/resq-software) |
 | `assets/` | Shared assets (banner, logo) used across org READMEs |
 | `README.template.md` | Standardized README template for new ResQ repositories |
+| [`docs/standards/`](docs/standards/) | Org-wide engineering standards — the three-tier model (baseline, per-language, safety overlay) + security overlay |
 
 ### Community Health Files
 
