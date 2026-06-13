@@ -5,7 +5,7 @@
     1. Copy this file to your project root as README.md
     2. Replace every {{PLACEHOLDER}} with real values
     3. Delete sections that don't apply to your project
-    4. Delete all HTML comments (<!-- ... -->) before publishing
+    4. Delete all HTML comment blocks before publishing
 
   Auto-generated fields (see "Automation" section at the bottom):
     - CI badge          → set up GitHub Actions workflow named `ci.yml`
@@ -24,10 +24,10 @@
      ───────────────────────────────────────────────────────────────────── -->
 <div align="center" markdown="1">
 
-<!-- MARK: a square logo (~96–120px, assets/logo.png) reads cleaner in this
-     centered layout than a wide banner. Swap src/width for a 1200×300
-     banner if you prefer one. -->
-<img src="assets/logo.png" alt="{{PROJECT_NAME}}" width="120" />
+<!-- MARK: defaults to the ResQ org banner via an absolute URL so it renders
+     even before you add your own asset. Swap for your repo's own logo/banner
+     in assets/ — a ~120px square logo reads cleaner here than a wide banner. -->
+<img src="https://raw.githubusercontent.com/resq-software/.github/main/assets/banner.png" alt="{{PROJECT_NAME}}" width="480" />
 
 <h1 align="center">{{PROJECT_NAME}}</h1>
 
