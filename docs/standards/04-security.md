@@ -7,16 +7,14 @@ This is the day-to-day checklist; the disclosure process lives in
 
 ## Pre-merge checklist
 
-```text
-[ ] No hardcoded secrets (API keys, passwords, tokens).
-[ ] All user input validated at the boundary (schema-based where possible).
-[ ] SQL: parameterized queries only — no string concatenation.
-[ ] XSS: output encoded; no unsanitized HTML injection.
-[ ] CSRF protection on state-changing requests.
-[ ] AuthN/AuthZ verified on every protected path; fail closed.
-[ ] Rate limiting on public / abusable endpoints.
-[ ] Error messages don't leak secrets, stack traces, or PII.
-```
+- [ ] No hardcoded secrets (API keys, passwords, tokens).
+- [ ] All user input validated at the boundary (schema-based where possible).
+- [ ] SQL: parameterized queries only — no string concatenation.
+- [ ] XSS: output encoded; no unsanitized HTML injection.
+- [ ] CSRF protection on state-changing requests.
+- [ ] AuthN/AuthZ verified on every protected path; fail closed.
+- [ ] Rate limiting on public / abusable endpoints.
+- [ ] Error messages don't leak secrets, stack traces, or PII.
 
 ## Secret management
 
