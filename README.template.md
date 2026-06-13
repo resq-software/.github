@@ -27,7 +27,7 @@
 <!-- MARK: a square logo (~96–120px, assets/logo.png) reads cleaner in this
      centered layout than a wide banner. Swap src/width for a 1200×300
      banner if you prefer one. -->
-<img src="assets/banner.png" alt="{{PROJECT_NAME}}" width="120" />
+<img src="assets/logo.png" alt="{{PROJECT_NAME}}" width="120" />
 
 <h1 align="center">{{PROJECT_NAME}}</h1>
 
