@@ -23,7 +23,7 @@ This is the day-to-day checklist; the disclosure process lives in
 - Rotate anything that may have been exposed; treat exposure as an incident.
 - GitHub native secret scanning + push protection are on; CI runs OSV/Dependency
   Review, with opt-in Gitleaks/Semgrep/Snyk (see
-  [`security-scan.yml`](../../.github/workflows/README.md)).
+  [`security-scan.yml`](../../.github/workflows/security-scan.yml)).
 
 ## Reference standards
 

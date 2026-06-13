@@ -56,7 +56,7 @@ resq hooks update         # rewrite installed hooks from embedded templates
 ## Engineering standards
 
 Org-wide code standards live in [`docs/standards/`](./docs/standards/) — a
-three-tier model:
+three-tier model plus a security overlay:
 
 - [**Tier 1 — Baseline**](./docs/standards/01-baseline.md): required toolchain,
   hard rules, code shape (every repo).
