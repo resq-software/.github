@@ -57,9 +57,10 @@ cargo clippy -- -D warnings
 cargo test
 cargo audit
 cargo deny check
-#![forbid(unsafe_code)]   // where the crate allows it
 ```
 
+- Add `#![forbid(unsafe_code)]` at the crate root where the crate allows it
+  (it's a source attribute, not a CLI flag).
 - Follow the [Rust API Guidelines](https://github.com/rust-lang/api-guidelines)
   for public surfaces.
 - Treat every `unsafe` block as a mini C island: document the invariants,
