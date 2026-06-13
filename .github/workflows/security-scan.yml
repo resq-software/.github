@@ -64,6 +64,14 @@ on:
         type: boolean
         required: false
         default: true
+      enable-vet:
+        description: >
+          Run safedep/vet OSS dependency policy scan against the caller repo's
+          .github/vet/policy.yml + .github/vet/exceptions.yml. Off by default;
+          soft-launch (non-blocking) until exceptions are seeded.
+        type: boolean
+        required: false
+        default: false
       submodules:
         description: >
           Checkout submodules for the CodeQL job (autobuild may need them).
@@ -86,6 +94,12 @@ on:
       SNYK_TOKEN:
         description: Snyk token. Used only when enable-snyk is true.
         required: false
+      SAFEDEP_CLOUD_KEY:
+        description: SafeDep Cloud API key (optional; malware/zero-day analysis). Used only when enable-vet is true.
+        required: false
+      SAFEDEP_CLOUD_TENANT:
+        description: SafeDep Cloud tenant. Used only when enable-vet is true.
+        required: false
 
 permissions:
   contents: read
@@ -93,6 +107,37 @@ permissions:
   pull-requests: read      # dependency-review
 
 jobs:
+  # ── safedep/vet — OSS Dependency Policy ───────────────────────────────────
+  # Malware (MAL-), critical/high vulns, license allowlist (npm/PyPI/NuGet),
+  # OpenSSF Scorecard maintenance/dangerous-workflow, popularity floor — gated
+  # by the caller's .github/vet/policy.yml. Soft-launch: non-blocking until the
+  # caller seeds .github/vet/exceptions.yml and promotes vet to a required check.
+  vet:
+    name: vet (OSS dependency policy)
+    if: ${{ inputs.enable-vet }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # inline PR comments on changed deps
+      issues: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - name: Run safedep/vet
+        uses: safedep/vet-action@6247cccd1b6683a27946ea3a0d45d3865346918b  # v1.1.12
+        with:
+          policy: .github/vet/policy.yml
+          exception-file: .github/vet/exceptions.yml
+          exclude: "**/vendor/**, .cargo/**, **/node_modules/**, **/target/**, .worktrees/**"
+          trusted-registries: "https://crates.io,https://registry.npmjs.org,https://pypi.org,https://api.nuget.org"
+          upload-sarif: false      # private repos w/o GHAS — use step summary
+          cloud-key: ${{ secrets.SAFEDEP_CLOUD_KEY }}
+          cloud-tenant: ${{ secrets.SAFEDEP_CLOUD_TENANT }}
+        continue-on-error: true    # SOFT-LAUNCH: warn-only until promoted to required
+
   # ── CodeQL ────────────────────────────────────────────────────────────────
   # CodeQL is handled by GitHub's repo-level "default setup" (Settings →
   # Code security → CodeQL analysis). Running a matrix job here conflicts
