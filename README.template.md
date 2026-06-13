@@ -16,85 +16,51 @@
   ═══════════════════════════════════════════════════════════════════
 -->
 
-<!-- BANNER: 1200×300 recommended. Store in assets/banner.png or skip entirely -->
-<p align="center">
-  <img src="assets/banner.png" alt="{{PROJECT_NAME}} Banner" width="100%" />
-</p>
+<!-- ─────────────────────────────────────────────────────────────────────
+     HERO — editorial / centered. Keep it calm: a mark, the name, one line,
+     a short badge row, a single nav line. Everything lives inside one
+     centered <div>. The "ResQ README Template" marker comment above must
+     stay (org tooling checks for it).
+     ───────────────────────────────────────────────────────────────────── -->
+<div align="center" markdown="1">
+
+<!-- MARK: a square logo (~96–120px, assets/logo.png) reads cleaner in this
+     centered layout than a wide banner. Swap src/width for a 1200×300
+     banner if you prefer one. -->
+<img src="assets/banner.png" alt="{{PROJECT_NAME}}" width="120" />
 
 <h1 align="center">{{PROJECT_NAME}}</h1>
 
-<!-- TAGLINE: one sentence. What it is and who it's for. -->
-<p align="center">
-  {{ONE_LINE_DESCRIPTION}}
-</p>
+<p align="center"><em>{{ONE_LINE_DESCRIPTION}}</em></p>
 
-<!--
-  BADGES — keep this row short (4–6 max).
-  Delete the blocks that don't apply. The correct URL pattern per ecosystem:
+<!-- BADGES — keep to 4–6. Pick ONE version badge for your ecosystem and
+     delete the rest. `flat` + a logo + the ResQ sky accent (0ea5e9) keeps
+     the row quiet and consistent. Blank lines around this block are load-
+     bearing: they let GitHub render the Markdown badges inside the <div>. -->
 
-  ── CI (all projects) ───────────────────────────────────────────────
-  https://img.shields.io/github/actions/workflow/status/resq-software/{{REPO}}/ci.yml?branch=main
+[![CI](https://img.shields.io/github/actions/workflow/status/resq-software/{{REPO}}/ci.yml?branch=main&style=flat&logo=githubactions&logoColor=white&label=ci&color=0ea5e9)](https://github.com/resq-software/{{REPO}}/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/{{NPM_PACKAGE}}?style=flat&logo=npm&label=npm&color=0ea5e9)](https://www.npmjs.com/package/{{NPM_PACKAGE}})
+[![crates.io](https://img.shields.io/crates/v/{{CRATE_NAME}}?style=flat&logo=rust&logoColor=white&color=0ea5e9)](https://crates.io/crates/{{CRATE_NAME}})
+[![PyPI](https://img.shields.io/pypi/v/{{PYPI_PACKAGE}}?style=flat&logo=pypi&logoColor=white&color=0ea5e9)](https://pypi.org/project/{{PYPI_PACKAGE}}/)
+[![NuGet](https://img.shields.io/nuget/v/{{NUGET_PACKAGE}}?style=flat&logo=nuget&logoColor=white&color=0ea5e9)](https://www.nuget.org/packages/{{NUGET_PACKAGE}})
+[![Coverage](https://codecov.io/gh/resq-software/{{REPO}}/graph/badge.svg)](https://codecov.io/gh/resq-software/{{REPO}})
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-0ea5e9?style=flat)](./LICENSE)
 
-  ── Version ─────────────────────────────────────────────────────────
-  npm:      https://img.shields.io/npm/v/{{NPM_PACKAGE}}
-  crates:   https://img.shields.io/crates/v/{{CRATE_NAME}}
-  PyPI:     https://img.shields.io/pypi/v/{{PYPI_PACKAGE}}
-  NuGet:    https://img.shields.io/nuget/v/{{NUGET_PACKAGE}}
-
-  ── Coverage ─────────────────────────────────────────────────────────
-  https://codecov.io/gh/resq-software/{{REPO}}/graph/badge.svg
-
-  ── License (Apache-2.0, all ResQ projects) ─────────────────────────
-  https://img.shields.io/badge/license-Apache--2.0-blue.svg
--->
-<p align="center">
-  <!-- CI -->
-  <a href="https://github.com/resq-software/{{REPO}}/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/resq-software/{{REPO}}/ci.yml?branch=main&label=ci&style=flat-square" alt="CI" />
-  </a>
-  <!-- Version — pick ONE block below based on ecosystem, delete the rest -->
-  <!-- npm -->
-  <a href="https://www.npmjs.com/package/{{NPM_PACKAGE}}">
-    <img src="https://img.shields.io/npm/v/{{NPM_PACKAGE}}?style=flat-square&label=npm" alt="npm version" />
-  </a>
-  <!-- crates.io -->
-  <a href="https://crates.io/crates/{{CRATE_NAME}}">
-    <img src="https://img.shields.io/crates/v/{{CRATE_NAME}}?style=flat-square" alt="crates.io" />
-  </a>
-  <!-- PyPI -->
-  <a href="https://pypi.org/project/{{PYPI_PACKAGE}}/">
-    <img src="https://img.shields.io/pypi/v/{{PYPI_PACKAGE}}?style=flat-square" alt="PyPI" />
-  </a>
-  <!-- NuGet -->
-  <a href="https://www.nuget.org/packages/{{NUGET_PACKAGE}}">
-    <img src="https://img.shields.io/nuget/v/{{NUGET_PACKAGE}}?style=flat-square" alt="NuGet" />
-  </a>
-  <!-- Coverage -->
-  <a href="https://codecov.io/gh/resq-software/{{REPO}}">
-    <img src="https://codecov.io/gh/resq-software/{{REPO}}/graph/badge.svg" alt="Coverage" />
-  </a>
-  <!-- License -->
-  <a href="./LICENSE">
-    <img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=flat-square" alt="License: Apache-2.0" />
-  </a>
-  <!-- Stars -->
-  <a href="https://github.com/resq-software">
-    <img src="https://img.shields.io/github/stars/resq-software.svg?color=gold&style=flat-square&label=Total%20Stars" alt="Total Stars" />
-  </a>
-</p>
-
-<!-- NAV ROW — quick links. Keep it to one line; drop entries that don't apply. -->
 <p align="center">
   <a href="https://docs.resq.software"><b>Documentation</b></a>
   &nbsp;·&nbsp;
   <a href="https://resq.software"><b>Website</b></a>
   &nbsp;·&nbsp;
-  <a href="#quick-start"><b>Quick Start</b></a>
+  <a href="#quick-start"><b>Quick&nbsp;Start</b></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/resq-software/{{REPO}}/issues/new/choose"><b>Report Bug</b></a>
+  <a href="https://github.com/resq-software/{{REPO}}/issues/new/choose"><b>Report&nbsp;Bug</b></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/resq-software/{{REPO}}/issues/new/choose"><b>Request Feature</b></a>
+  <a href="https://github.com/resq-software/{{REPO}}/issues/new/choose"><b>Request&nbsp;Feature</b></a>
 </p>
+
+</div>
+
+<p align="center">◆&nbsp;&nbsp;&nbsp;◆&nbsp;&nbsp;&nbsp;◆</p>
 
 ---
 
@@ -115,6 +81,7 @@
 - [Changelog](#changelog)
 - [License](#license)
 - [Acknowledgements](#acknowledgements)
+- [Stats](#stats)
 
 ---
 
@@ -382,6 +349,26 @@ Licensed under the [Apache License, Version 2.0](./LICENSE).
 
 - Built on the [ResQ platform](https://resq.software).
 - {{ACKNOWLEDGEMENT_1}}
+
+---
+
+## Stats
+
+<!-- Repobeats renders a live activity panel (commits, PRs, issues,
+     contributors) as a single SVG. Generate the embed URL for THIS repo at
+     https://repobeats.axiom.co — paste the per-repo hash below. Delete this
+     section for private repos or where activity stats aren't useful. -->
+
+<div align="center">
+
+![{{PROJECT_NAME}} activity](https://repobeats.axiom.co/api/embed/{{REPOBEATS_HASH}}.svg "Repobeats analytics image")
+
+<!-- Contributor avatars — auto-generated, no setup beyond the repo path. -->
+<a href="https://github.com/resq-software/{{REPO}}/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=resq-software/{{REPO}}" alt="Contributors" />
+</a>
+
+</div>
 
 ---
 
