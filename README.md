@@ -12,6 +12,7 @@ Organization-wide community health files, issue/PR templates, and the public pro
 | `assets/` | Shared assets (banner, logo) used across org READMEs |
 | `README.template.md` | Standardized README template for new ResQ repositories |
 | [`docs/standards/`](docs/standards/) | Org-wide engineering standards — the three-tier model (baseline, per-language, safety overlay) + security overlay |
+| [`config/`](config/) | Canonical configs the standards reference — `.editorconfig`, strict `tsconfig` base, Ruff, cargo-deny, yamllint |
 
 ### Community Health Files
 

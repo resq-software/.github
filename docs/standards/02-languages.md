@@ -4,6 +4,11 @@ Per-language tooling and idioms. A repo's `lang` custom property selects which
 section applies; polyglot repos apply every relevant section. These extend
 [Tier 1](./01-baseline.md) and override it where the language idiom differs.
 
+> **Canonical configs** for the tools below live in [`config/`](../../config/) —
+> the org's single source of truth for `.editorconfig`, the strict `tsconfig`
+> base, Ruff, cargo-deny, and yamllint. Adopt them per
+> [`config/README.md`](../../config/README.md).
+
 ---
 
 ## TypeScript
