@@ -36,6 +36,19 @@ on:
         type: boolean
         required: false
         default: false
+      enable-dependency-review:
+        description: >
+          PR dependency-review (blocks high-severity CVEs). Needs a GitHub
+          Advanced Security dependency graph — set false on private repos
+          without GHAS, where it otherwise errors.
+        type: boolean
+        required: false
+        default: true
+      enable-zizmor:
+        description: Workflow-YAML security audit. Set false to skip entirely.
+        type: boolean
+        required: false
+        default: true
       node-package-manager:
         type: string
         required: false
@@ -156,6 +169,8 @@ jobs:
       languages: ${{ inputs.codeql-languages }}
       enable-semgrep: ${{ inputs.enable-semgrep }}
       enable-gitleaks: ${{ inputs.enable-gitleaks }}
+      enable-dependency-review: ${{ inputs.enable-dependency-review }}
+      enable-zizmor: ${{ inputs.enable-zizmor }}
       submodules: ${{ inputs.submodules }}
     secrets: inherit
 
