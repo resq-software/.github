@@ -119,6 +119,12 @@ permissions:
   contents: read
   security-events: write
   pull-requests: read
+  # Required so the nested security-scan `codeql`/`zizmor` jobs (which request
+  # `actions: read` since #20) can be granted it. A reusable workflow can only
+  # pass down permissions it holds; without this, calling this workflow
+  # cross-repo fails at startup with "nested job is requesting 'actions: read',
+  # but is only allowed 'actions: none'".
+  actions: read
 
 jobs:
   # Fail fast if the caller passed an unknown `lang`. Without this, a
