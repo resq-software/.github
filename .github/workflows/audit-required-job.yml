@@ -50,12 +50,24 @@ jobs:
       - name: Scan org for missing `required` job
         id: scan
         env:
-          # Prefer an org-scoped PAT (e.g. SYNC_TOKEN) for private repo
-          # access; fall back to GITHUB_TOKEN (public repos only).
-          GH_TOKEN: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          # Prefer an org-scoped PAT (e.g. SYNC_TOKEN) for private-repo access;
+          # fall back to GITHUB_TOKEN (public repos) if it's absent OR rejected
+          # (e.g. the org forbids classic PATs with lifetime > 90 days).
+          PRIMARY_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          FALLBACK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+
+          # Pick a token that actually works for org reads. A set-but-invalid
+          # SYNC_TOKEN (expired, or a classic PAT the org now forbids) must NOT
+          # hard-fail the audit — degrade to GITHUB_TOKEN (public-repo coverage)
+          # and let private repos fall through to the unreachable list below.
+          export GH_TOKEN="${PRIMARY_TOKEN:-$FALLBACK_TOKEN}"
+          if [ -n "${PRIMARY_TOKEN:-}" ] && ! gh api "/orgs/$ORG/repos?per_page=1&type=all" >/dev/null 2>&1; then
+            echo "::warning::SYNC_TOKEN is set but rejected (expired, or org forbids classic PATs >90d). Falling back to GITHUB_TOKEN — private repos will be reported as unreachable. Set a fine-grained SYNC_TOKEN to restore full coverage."
+            export GH_TOKEN="$FALLBACK_TOKEN"
+          fi
 
           # Ruleset endpoint requires admin:org scope. If the available
           # token (GITHUB_TOKEN by default) can't read it, degrade
