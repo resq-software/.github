@@ -1,0 +1,20 @@
+# Canonical ResQ yamllint config — copy to a repo root as .yamllint.yml.
+# Encodes docs/standards/02-languages.md (Markdown / JSON / YAML).
+extends: default
+
+rules:
+  line-length:
+    max: 120
+    level: warning
+  document-start: disable        # GitHub Actions / k8s manifests omit `---`
+  truthy:
+    check-keys: false            # allow `on:` in workflows without quoting
+  comments:
+    min-spaces-from-content: 1
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+
+ignore: |
+  *.lock.yml
+  .github/workflows/*.lock.yml
