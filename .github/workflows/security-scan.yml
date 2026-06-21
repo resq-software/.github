@@ -118,8 +118,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write   # inline PR comments on changed deps
-      issues: write
+      # NOTE: write perms (pull-requests/issues) are intentionally omitted.
+      # vet runs warn-only (continue-on-error) and reports to the step summary,
+      # so it doesn't need to comment/open issues — and keeping security-scan's
+      # footprint read-only is what lets required.yml call it cross-repo without
+      # forcing every consumer's gate to grant write scopes. Promote vet to a
+      # standalone opt-in workflow if PR comments are wanted.
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
