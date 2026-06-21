@@ -276,6 +276,10 @@ jobs:
         continue-on-error: true
       - name: Upload zizmor SARIF
         if: always() && hashFiles('zizmor.sarif') != ''
+        # Best-effort: code-scanning SARIF upload requires GitHub Advanced
+        # Security. On private repos without GHAS it 403s — don't fail the job
+        # over it (the scan still ran; findings are in the step log/artifact).
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@5c8a8a642e79153f5d047b10ec1cba1d1cc65699  # v3
         with:
           sarif_file: zizmor.sarif
@@ -336,6 +340,8 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
       - name: Upload Snyk SARIF
         if: always() && hashFiles('snyk.sarif') != ''
+        # Best-effort upload (GHAS-only); don't fail the job on no-GHAS repos.
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@5c8a8a642e79153f5d047b10ec1cba1d1cc65699  # v3
         with:
           sarif_file: snyk.sarif
