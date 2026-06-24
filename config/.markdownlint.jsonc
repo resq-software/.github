@@ -1,0 +1,10 @@
+// Canonical ResQ markdownlint config — copy to a repo root as .markdownlint.jsonc.
+// Encodes docs/standards/02-languages.md (Markdown).
+{
+  "default": true,
+  "MD013": false, // line length — prose wraps; not a lint error
+  "MD033": false, // inline HTML — our READMEs use centered <div>/<img> heroes
+  "MD041": false, // first line need not be a heading (template opens with an HTML comment/banner)
+  "MD024": { "siblings_only": true }, // duplicate headings ok across sections
+  "MD029": { "style": "ordered" }
+}

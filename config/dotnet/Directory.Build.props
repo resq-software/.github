@@ -1,0 +1,25 @@
+<!--
+  Canonical ResQ .NET build props. Encodes docs/standards/02-languages.md (C#).
+  Unlike the copy-only configs, Directory.Build.props is auto-imported by MSBuild
+  from the repo root — drop it in and every project inherits these. Merge into an
+  existing Directory.Build.props if one is already present.
+-->
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Built-in Roslyn (.NET) analyzers + code-style enforced at build. -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- Treat warnings as errors in CI; keep local dev builds loud-but-green. -->
+    <TreatWarningsAsErrors Condition="'$(CI)' == 'true'">true</TreatWarningsAsErrors>
+    <!-- XML docs are a per-project opt-in: enabling globally turns CS1591
+         (missing doc comment) into a CI-breaking error for app projects.
+         Libraries that publish an API set <GenerateDocumentationFile>true</…>
+         in their own .csproj. -->
+  </PropertyGroup>
+</Project>

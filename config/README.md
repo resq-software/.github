@@ -16,6 +16,9 @@ settings — repos adopt them so "what does conformant look like" has one answer
 | [Ruff config](#python-ruff) (below) | Ruff (lint + format) | copy into `ruff.toml` / `pyproject.toml` |
 | [`rust/deny.toml`](./rust/deny.toml) | cargo-deny | copy to repo root |
 | [`yamllint.yml`](./yamllint.yml) | yamllint | copy as `.yamllint.yml` |
+| [`dotnet/Directory.Build.props`](./dotnet/Directory.Build.props) | MSBuild / Roslyn analyzers | drop at repo root (auto-imported) |
+| [`sql/.sqlfluff`](./sql/.sqlfluff) | SQLFluff | copy to repo root |
+| [`.markdownlint.jsonc`](./.markdownlint.jsonc) | markdownlint | copy to repo root |
 
 See [`docs/standards/02-languages.md`](../docs/standards/02-languages.md) for the
 per-language rules these encode, and the [standards index](../docs/standards/)
@@ -46,8 +49,10 @@ quote-style = "double"
 indent-style = "space"
 ```
 
-## Not yet templated
+## Adding a config
 
-C# (`.editorconfig` analyzer rules), SQL (`.sqlfluff`), and Markdown
-(`.markdownlint.jsonc`) are documented in the standards but not yet shipped as
-canonical files here — add them when the first repo of that kind needs one.
+The set now covers every language in the standards (TS, Python, C#, Rust,
+Shell-via-`.editorconfig`, SQL, YAML, Markdown). When a tool needs a canonical
+config, add the file here, document the rules it encodes in
+[`docs/standards/02-languages.md`](../docs/standards/02-languages.md), and list
+it in the table above.
