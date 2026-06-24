@@ -17,6 +17,9 @@
 
     <!-- Treat warnings as errors in CI; keep local dev builds loud-but-green. -->
     <TreatWarningsAsErrors Condition="'$(CI)' == 'true'">true</TreatWarningsAsErrors>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- XML docs are a per-project opt-in: enabling globally turns CS1591
+         (missing doc comment) into a CI-breaking error for app projects.
+         Libraries that publish an API set <GenerateDocumentationFile>true</…>
+         in their own .csproj. -->
   </PropertyGroup>
 </Project>
