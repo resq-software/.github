@@ -67,6 +67,9 @@ on:
 
 jobs:
   scan:
+    # Dependabot PRs can't inherit secrets into a cross-repo reusable workflow (startup_failure),
+    # which would block Dependabot's own PRs. Skip it there; push/schedule still scan the branch.
+    if: ${{ github.actor != 'dependabot[bot]' }}
     uses: resq-software/.github/.github/workflows/security-scan.yml@main
     with:
       languages: '["rust","javascript-typescript"]'
@@ -93,7 +96,7 @@ jobs:
 - `SNYK_TOKEN` — from Snyk account settings.
 - `GITLEAKS_LICENSE` — only needed for private-repo Gitleaks scans.
 
-`secrets: inherit` in the caller forwards all org/repo secrets.
+`secrets: inherit` in the caller forwards all org/repo secrets. Note: GitHub does **not** grant secrets to Dependabot-triggered runs, so a caller using `secrets: inherit` will `startup_failure` on Dependabot PRs — guard the job with `if: ${{ github.actor != 'dependabot[bot]' }}` (as in the template above) so those PRs aren't blocked.
 
 ### Harden-Runner: audit → block migration
 
