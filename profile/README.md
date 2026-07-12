@@ -23,7 +23,6 @@ ResQ is a mission-critical autonomous platform for decentralized coordination in
 | [programs](https://github.com/resq-software/programs) | Solana Anchor on-chain programs | Rust |
 | [vcpkg](https://github.com/resq-software/vcpkg) | C++ vcpkg libraries | C++ |
 | [viz](https://github.com/resq-software/viz) | .NET visualization library | C# |
-| [landing](https://github.com/resq-software/landing) | Marketing & product site | Next.js |
 | [docs](https://github.com/resq-software/docs) | Documentation (Mintlify) | MDX |
 | [dev](https://github.com/resq-software/dev) | One-command developer setup + canonical git hooks | Shell |
 
