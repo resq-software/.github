@@ -66,6 +66,17 @@ on:
         type: number
         required: false
         default: 15
+      runner:
+        description: >-
+          Label(s) the job runs on. Defaults to GitHub-hosted
+          `ubuntu-latest`; set to a self-hosted label (e.g. `self-hosted`)
+          to run on an org/repo self-hosted runner instead — useful when
+          GitHub-hosted minutes are exhausted. A single label string;
+          callers typically wire this to a repo variable so it can be
+          toggled without editing the workflow.
+        type: string
+        required: false
+        default: "ubuntu-latest"
 
 permissions:
   contents: read
@@ -73,7 +84,7 @@ permissions:
 jobs:
   ci:
     name: Node CI
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
       run:
