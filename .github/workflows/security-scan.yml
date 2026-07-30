@@ -79,6 +79,18 @@ on:
         type: string
         required: false
         default: ""
+      runner:
+        description: >-
+          Label(s) the scan jobs run on. Defaults to GitHub-hosted
+          `ubuntu-latest`; set to a self-hosted label (e.g. `self-hosted`)
+          to run on an org/repo self-hosted runner instead — useful when
+          GitHub-hosted minutes are exhausted. A single label string;
+          callers typically wire this to a repo variable so it can be
+          toggled without editing the workflow. Mirrors node-ci.yml's
+          `runner` input.
+        type: string
+        required: false
+        default: "ubuntu-latest"
 
     # Declared so callers can forward these by name instead of `secrets:
     # inherit` (which hands this workflow ALL of the caller's secrets and
@@ -115,7 +127,7 @@ jobs:
   vet:
     name: vet (OSS dependency policy)
     if: ${{ inputs.enable-vet }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     permissions:
       contents: read
       # NOTE: write perms (pull-requests/issues) are intentionally omitted.
@@ -152,7 +164,7 @@ jobs:
   codeql:
     name: CodeQL (${{ matrix.language }})
     if: ${{ inputs.languages != '' && inputs.languages != '[]' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     permissions:
       contents: read
       security-events: write
@@ -190,7 +202,7 @@ jobs:
   gitleaks:
     name: gitleaks
     if: ${{ inputs.enable-gitleaks }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
@@ -208,7 +220,7 @@ jobs:
   osv-scanner:
     name: osv-scanner
     if: ${{ inputs.enable-osv }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
@@ -237,7 +249,7 @@ jobs:
   dependency-review:
     name: dependency-review
     if: ${{ inputs.enable-dependency-review && github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
@@ -253,7 +265,7 @@ jobs:
   zizmor:
     name: zizmor
     if: ${{ inputs.enable-zizmor }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     permissions:
       contents: read
       security-events: write
@@ -289,7 +301,7 @@ jobs:
   actionlint:
     name: actionlint
     if: ${{ inputs.enable-actionlint }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
@@ -308,7 +320,7 @@ jobs:
   semgrep:
     name: semgrep
     if: ${{ inputs.enable-semgrep }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     container:
       image: semgrep/semgrep
     steps:
@@ -326,7 +338,7 @@ jobs:
   snyk:
     name: snyk
     if: ${{ inputs.enable-snyk }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
