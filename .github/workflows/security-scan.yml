@@ -281,10 +281,13 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
-      - name: Install zizmor
-        run: pipx install zizmor
+      # uv (single static binary) instead of pipx: pipx isn't guaranteed on
+      # self-hosted runners, and `uvx zizmor` needs no pre-installed Python
+      # tooling. Works identically on GitHub-hosted.
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - name: Run zizmor
-        run: zizmor --format sarif .github/workflows/ > zizmor.sarif
+        run: uvx zizmor --format sarif .github/workflows/ > zizmor.sarif
         continue-on-error: true
       - name: Upload zizmor SARIF
         if: always() && hashFiles('zizmor.sarif') != ''
