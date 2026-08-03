@@ -70,16 +70,20 @@ prevent it quietly matches nothing. Each went unnoticed for 30+ days:
   block sets every unlisted scope to `none`, so the reusable scan's
   codeql/zizmor jobs request more than the caller grants and GitHub rejects the
   run at creation — a `startup_failure` with no jobs and no logs.
-- **`dependabot.yml` must ignore `github/gh-aw-actions*`** in any repo carrying
-  gh-aw `*.lock.yml`. Mind the trailing `*`: Dependabot names an action by its
-  full path, so the dependency is `github/gh-aw-actions/setup` and a bare
-  `github/gh-aw-actions` matches nothing.
+- **`dependabot.yml` must ignore `github/gh-aw-actions*`** in any repo that
+  carries gh-aw `*.lock.yml` *and* has a Dependabot config. (A repo with no
+  `dependabot.yml` is safe by construction — nothing bumps the action — but the
+  moment one is added, the ignore must come with it.) Mind the trailing `*`:
+  Dependabot names an action by its full path, so the dependency is
+  `github/gh-aw-actions/setup` and a bare `github/gh-aw-actions` matches
+  nothing.
 - **gh-aw lock files must not drift.** A lock file's body is only valid against
   the `gh-aw-actions/setup` release that generated it. Never hand-edit them or
   let Dependabot bump the action — regenerate with `gh aw compile`.
 - **Declare custom runner labels.** Workflows using the self-hosted `zima`
-  label need `.github/actionlint.yaml` to declare it, or actionlint fails with
-  `label "zima" is unknown`.
+  label need `.github/actionlint.yaml` (or `.yml`) to declare it under
+  `self-hosted-runner.labels` — the file merely existing is not enough, or
+  actionlint still fails with `label "zima" is unknown`.
 
 ## Definition of done
 
