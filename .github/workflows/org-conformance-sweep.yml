@@ -30,6 +30,11 @@ on:
         type: boolean
         required: false
         default: false
+      skip-repos:
+        description: "Space-separated repos to skip entirely (known-inaccessible or out of scope)."
+        type: string
+        required: false
+        default: "scripts"
 
 permissions:
   contents: read
@@ -49,6 +54,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.ORG_READ_TOKEN || github.token }}
           FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+          # Scheduled runs pass no inputs, so default here too — otherwise the
+          # weekly report would flag known-inaccessible repos every Monday, and
+          # a report that cries wolf is one people stop reading.
+          SKIP_REPOS: ${{ inputs.skip-repos || 'scripts' }}
           ORG: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
@@ -81,6 +90,15 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           for r in $repos; do
+            skip=no
+            for sk in ${SKIP_REPOS:-}; do
+              [ "$r" = "$sk" ] && { skip=yes; break; }
+            done
+            if [ "$skip" = yes ]; then
+              echo "sweep: skipping $r (skip-repos)"
+              continue
+            fi
+
             total=$((total + 1))
             findings=""
 
