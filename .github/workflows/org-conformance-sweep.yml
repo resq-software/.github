@@ -31,10 +31,10 @@ on:
         required: false
         default: false
       skip-repos:
-        description: "Space-separated repos to skip entirely (known-inaccessible or out of scope)."
+        description: "Space-separated repos to skip entirely. Normally empty — an escape hatch, not a way to hide findings."
         type: string
         required: false
-        default: "scripts"
+        default: ""
 
 permissions:
   contents: read
@@ -54,10 +54,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.ORG_READ_TOKEN || github.token }}
           FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
-          # Scheduled runs pass no inputs, so default here too — otherwise the
-          # weekly report would flag known-inaccessible repos every Monday, and
-          # a report that cries wolf is one people stop reading.
-          SKIP_REPOS: ${{ inputs.skip-repos || 'scripts' }}
+          # Escape hatch only. Deliberately empty: a repo suppressed here is a
+          # repo nobody is checking, so a finding should be fixed rather than
+          # skipped.
+          SKIP_REPOS: ${{ inputs.skip-repos }}
           ORG: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
@@ -70,16 +70,59 @@ jobs:
               | base64 -d 2>/dev/null || true
           }
 
-          # List a repo's workflow filenames. Exits non-zero when the directory
-          # cannot be read at all, which is how access failures are told apart
-          # from a repo that genuinely has no workflows.
-          ls_workflows() {
-            gh api "/repos/$ORG/$1/contents/.github/workflows" \
-              --jq '[.[].name] | join(" ")' 2>/dev/null
+          # Readability is established against the repo object itself, not the
+          # workflows directory: a repo with no .github/workflows returns 404,
+          # which is indistinguishable from an access failure if you only look
+          # at the exit status. Conflating them would report a perfectly
+          # readable repo as UNREADABLE.
+          repo_readable() {
+            gh api "/repos/$ORG/$1" --jq '.name' >/dev/null 2>&1
           }
 
-          repos=$(gh repo list "$ORG" --limit 200 --no-archived \
-            --json name --jq '.[].name' | sort)
+          # Workflow filenames, or empty when the directory does not exist.
+          ls_workflows() {
+            gh api "/repos/$ORG/$1/contents/.github/workflows" \
+              --jq '[.[].name] | join(" ")' 2>/dev/null || true
+          }
+
+          # Effective `actions: read` for the job that calls the reusable scan.
+          # Job-level permissions REPLACE the top-level block, so a file-wide
+          # grep would pass a workflow whose caller job has its own narrower
+          # block. Mirrors the check in repo-standards.yml.
+          caller_grants_actions_read() {
+            awk '
+              /^permissions:[[:space:]]*$/            { intop=1; next }
+              /^[^[:space:]]/                         { intop=0 }
+              intop && /^[[:space:]]+actions:[[:space:]]*read/ { topok=1 }
+              /^[[:space:]][[:space:]][A-Za-z0-9_-]+:[[:space:]]*$/ {
+                job=$1; sub(":","",job); injobperm=0
+              }
+              job && /^[[:space:]]{4}permissions:[[:space:]]*$/ {
+                injobperm=1; hasown[job]=1; next
+              }
+              injobperm && /^[[:space:]]{6}actions:[[:space:]]*read/ { ok[job]=1 }
+              injobperm && /^[[:space:]]{4}[^[:space:]]/            { injobperm=0 }
+              /security-scan\.yml@/ { caller=job }
+              END {
+                if (caller == "") exit 0
+                if (hasown[caller]) exit (ok[caller] ? 0 : 1)
+                exit (topok ? 0 : 1)
+              }
+            '
+          }
+
+          # A partial or failed enumeration must not read as "all clean" — that
+          # is the exact false-assurance mode this sweep exists to prevent.
+          if ! repos=$(gh repo list "$ORG" --limit 1000 --no-archived \
+                         --json name --jq '.[].name' | sort); then
+            echo "::error title=org-conformance-sweep::cannot enumerate $ORG — set ORG_READ_TOKEN (org-wide, Contents: Read)."
+            exit 1
+          fi
+          repo_count=$(printf '%s\n' "$repos" | grep -c . || true)
+          if [ "${repo_count:-0}" -lt 2 ]; then
+            echo "::error title=org-conformance-sweep::enumerated only ${repo_count:-0} repo(s) — GITHUB_TOKEN cannot list the org. Set ORG_READ_TOKEN."
+            exit 1
+          fi
 
           total=0 affected=0 unreadable=0
           {
@@ -104,12 +147,13 @@ jobs:
 
             # Establish readability first. A repo we cannot read is reported as
             # such — never counted as clean.
-            if ! wf=$(ls_workflows "$r"); then
+            if ! repo_readable "$r"; then
               unreadable=$((unreadable + 1))
               echo "| \`$r\` | **UNREADABLE** — token lacks access; not assessed |" >> "$GITHUB_STEP_SUMMARY"
               echo "::warning title=org-conformance-sweep::$r unreadable — not assessed"
               continue
             fi
+            wf=$(ls_workflows "$r")
             [ -n "$wf" ] || continue
 
             # 1. security.yml calling the org scan must grant `actions: read`,
@@ -118,8 +162,8 @@ jobs:
               *" security.yml "*)
                 sec=$(fetch "$r" ".github/workflows/security.yml")
                 if printf '%s' "$sec" | grep -q 'security-scan\.yml' &&
-                   ! printf '%s' "$sec" | grep -qE '^[[:space:]]+actions:[[:space:]]*read'; then
-                  findings="${findings}security.yml missing \`actions: read\` (startup_failure); "
+                   ! printf '%s' "$sec" | caller_grants_actions_read; then
+                  findings="${findings}security.yml caller job lacks effective \`actions: read\` (startup_failure); "
                 fi
                 ;;
             esac
