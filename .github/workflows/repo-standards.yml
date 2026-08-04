@@ -199,7 +199,11 @@ jobs:
           #    `label "zima" is unknown` the moment it is switched on.
           #    Existence is not enough — an actionlint.yaml that omits the label
           #    still fails. Require the label to actually be declared.
-          if grep -rqE 'runs-on:.*\bzima\b' .github/workflows/ 2>/dev/null; then
+          #    Match only the LITERAL array form of runs-on. The dynamic
+          #    USE_SELF_HOSTED toggle embeds the label inside an expression
+          #    actionlint cannot evaluate, so it never errors on those — and
+          #    matching them would warn repos that are actually fine.
+          if grep -rqE 'runs-on:[[:space:]]*\[[^]]*\bzima\b' .github/workflows/ 2>/dev/null; then
             al=""
             for f in .github/actionlint.yaml .github/actionlint.yml; do
               if [ -f "$f" ]; then al="$f"; break; fi

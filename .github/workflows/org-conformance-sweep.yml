@@ -1,0 +1,189 @@
+# Copyright 2026 ResQ Software
+# SPDX-License-Identifier: Apache-2.0
+#
+# Org-wide CI-configuration sweep.
+#
+# repo-standards.yml catches drift on the PR that introduces it. It cannot
+# catch a repo that already drifted and simply is not being touched — which is
+# how the 2026-08 triage found four repos whose security scan had never run
+# once. Nobody had opened a PR against them since the day it broke.
+#
+# This closes that hole: the same checks, applied to every non-archived repo in
+# the org on a schedule, reported as a job summary.
+#
+# Read-only — it reads repo contents through the API and writes nothing back.
+#
+# TOKEN: needs read access to sibling repos, which GITHUB_TOKEN does not have.
+# Set an `ORG_READ_TOKEN` secret (fine-grained, org-wide, Contents: Read).
+# Without it the sweep reports every repo as UNREADABLE rather than clean —
+# silence must never be mistaken for conformance.
+
+name: org-conformance-sweep
+
+on:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC
+  workflow_dispatch:
+    inputs:
+      fail-on-findings:
+        description: "Exit non-zero if any repo has findings. Default: report only."
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    name: org-conformance-sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2
+        with:
+          egress-policy: audit
+
+      - name: Sweep org repositories
+        env:
+          GH_TOKEN: ${{ secrets.ORG_READ_TOKEN || github.token }}
+          FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+          ORG: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          # Print a repo file's contents; empty if absent OR unreadable. The
+          # caller must have already established readability via ls_workflows,
+          # so an empty result here means "absent".
+          fetch() {
+            gh api "/repos/$ORG/$1/contents/$2" --jq '.content' 2>/dev/null \
+              | base64 -d 2>/dev/null || true
+          }
+
+          # List a repo's workflow filenames. Exits non-zero when the directory
+          # cannot be read at all, which is how access failures are told apart
+          # from a repo that genuinely has no workflows.
+          ls_workflows() {
+            gh api "/repos/$ORG/$1/contents/.github/workflows" \
+              --jq '[.[].name] | join(" ")' 2>/dev/null
+          }
+
+          repos=$(gh repo list "$ORG" --limit 200 --no-archived \
+            --json name --jq '.[].name' | sort)
+
+          total=0 affected=0 unreadable=0
+          {
+            echo "## Org CI-configuration sweep"
+            echo
+            echo "| repo | finding |"
+            echo "| --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for r in $repos; do
+            total=$((total + 1))
+            findings=""
+
+            # Establish readability first. A repo we cannot read is reported as
+            # such — never counted as clean.
+            if ! wf=$(ls_workflows "$r"); then
+              unreadable=$((unreadable + 1))
+              echo "| \`$r\` | **UNREADABLE** — token lacks access; not assessed |" >> "$GITHUB_STEP_SUMMARY"
+              echo "::warning title=org-conformance-sweep::$r unreadable — not assessed"
+              continue
+            fi
+            [ -n "$wf" ] || continue
+
+            # 1. security.yml calling the org scan must grant `actions: read`,
+            #    else the run is rejected at creation and produces no logs.
+            case " $wf " in
+              *" security.yml "*)
+                sec=$(fetch "$r" ".github/workflows/security.yml")
+                if printf '%s' "$sec" | grep -q 'security-scan\.yml' &&
+                   ! printf '%s' "$sec" | grep -qE '^[[:space:]]+actions:[[:space:]]*read'; then
+                  findings="${findings}security.yml missing \`actions: read\` (startup_failure); "
+                fi
+                ;;
+            esac
+
+            locks=""
+            for f in $wf; do
+              case "$f" in *.lock.yml) locks="$locks $f" ;; esac
+            done
+
+            if [ -n "$locks" ]; then
+              # 2. The Dependabot ignore must carry the trailing wildcard.
+              dep=$(fetch "$r" ".github/dependabot.yml")
+              if [ -n "$dep" ] && ! printf '%s' "$dep" | grep -q 'github/gh-aw-actions\*'; then
+                findings="${findings}dependabot.yml missing \`github/gh-aw-actions*\` ignore; "
+              fi
+
+              # 3. Lock files whose compiler disagrees with the pinned setup.
+              for f in $locks; do
+                body=$(fetch "$r" ".github/workflows/$f")
+                [ -n "$body" ] || continue
+                # No `head -1` / `grep -m1` in a pipe here: they close the pipe
+                # early, the upstream writer takes SIGPIPE, and under
+                # `set -o pipefail` that aborts the whole sweep. Slice the first
+                # line with parameter expansion instead, and tolerate no-match
+                # greps, which exit 1 and would otherwise trip `set -e`.
+                first=${body%%$'\n'*}
+                cv=$(printf '%s' "$first" \
+                  | grep -oE '"compiler_version":"[^"]*"' | cut -d'"' -f4 || true)
+                bv=$(printf '%s' "$body" \
+                  | grep -oE 'gh-aw-actions/setup@[a-f0-9]+ # v[0-9.]+' \
+                  | sed -n '1s/.*# //p' || true)
+                if [ -n "$cv" ] && [ -n "$bv" ] && [ "$cv" != "$bv" ]; then
+                  findings="${findings}$f drift ($cv vs $bv); "
+                fi
+              done
+            fi
+
+            # 4. `zima` used as a LITERAL runs-on label without actionlint
+            #    declaring it. Match only the LITERAL array form: the
+            #    dynamic USE_SELF_HOSTED toggle in landing/resQ ci.yml embeds
+            #    the label inside an expression actionlint cannot evaluate, so
+            #    it never errors on those. Matching them would report repos
+            #    that are actually fine.
+            uses_zima=no
+            for f in $wf; do
+              case "$f" in *.lock.yml) continue ;; esac
+              wfbody=$(fetch "$r" ".github/workflows/$f")
+              if printf '%s' "$wfbody" \
+                   | grep -qE 'runs-on:[[:space:]]*\[[^]]*\bzima\b'; then
+                uses_zima=yes
+                break
+              fi
+            done
+            if [ "$uses_zima" = yes ]; then
+              al=$(fetch "$r" ".github/actionlint.yaml")
+              [ -n "$al" ] || al=$(fetch "$r" ".github/actionlint.yml")
+              if ! printf '%s' "$al" | grep -qE '^[[:space:]]*-[[:space:]]*zima[[:space:]]*$'; then
+                findings="${findings}uses \`zima\` without actionlint declaring it; "
+              fi
+            fi
+
+            if [ -n "$findings" ]; then
+              affected=$((affected + 1))
+              echo "| \`$r\` | ${findings%; } |" >> "$GITHUB_STEP_SUMMARY"
+              echo "::warning title=org-conformance-sweep::$r — ${findings%; }"
+            fi
+          done
+
+          if [ "$affected" -eq 0 ] && [ "$unreadable" -eq 0 ]; then
+            echo "| _none_ | all $total repos clean |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          {
+            echo
+            echo "Scanned **$total** repos — **$affected** with findings, **$unreadable** unreadable."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "sweep: $affected/$total with findings, $unreadable unreadable"
+
+          # Unreadable repos are a failure of the sweep itself, not a clean
+          # result, so they count toward the gate.
+          if [ "${FAIL_ON_FINDINGS:-false}" = "true" ] &&
+             { [ "$affected" -gt 0 ] || [ "$unreadable" -gt 0 ]; }; then
+            echo "::error title=org-conformance-sweep::$affected with findings, $unreadable unreadable."
+            exit 1
+          fi
