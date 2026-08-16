@@ -110,6 +110,111 @@ jobs:
             fi
           fi
 
+          # ── CI configuration ─────────────────────────────────────────────
+          # Four drift classes that went unnoticed for 30+ days across the org
+          # because each fails *silently*: the run either never starts (so it
+          # produces no logs at all) or the guard meant to prevent it quietly
+          # matches nothing. Static checks catch them at PR time instead.
+
+          # 1. A security.yml calling the org reusable scan must grant
+          #    `actions: read`. An explicit permissions block sets every
+          #    unlisted scope to none, so the reusable's codeql/zizmor jobs
+          #    request more than the caller grants and GitHub rejects the run
+          #    at creation. That is a startup_failure: no jobs, no logs, and
+          #    invisible to tooling that only inspects failed runs.
+          #    Check the permission that actually applies to the calling job:
+          #    job-level `permissions:` overrides the top-level block, so a
+          #    bare file-wide grep would pass a workflow whose caller job has
+          #    its own (narrower) block. awk walks the file tracking which of
+          #    the two applies to the job holding the reusable `uses:`.
+          if [ -f .github/workflows/security.yml ] &&
+             grep -q 'resq-software/\.github/\.github/workflows/security-scan\.yml' .github/workflows/security.yml; then
+            if ! awk '
+              # Top-level permissions block.
+              /^permissions:[[:space:]]*$/            { intop=1; next }
+              /^[^[:space:]]/                         { intop=0 }
+              intop && /^[[:space:]]+actions:[[:space:]]*read/ { topok=1 }
+
+              # Job header (two-space indent) starts a new job scope.
+              /^[[:space:]][[:space:]][A-Za-z0-9_-]+:[[:space:]]*$/ {
+                job=$1; sub(":","",job); injobperm=0
+              }
+              # Job-level permissions block (four-space indent).
+              job && /^[[:space:]]{4}permissions:[[:space:]]*$/ {
+                injobperm=1; hasown[job]=1; next
+              }
+              injobperm && /^[[:space:]]{6}actions:[[:space:]]*read/ { ok[job]=1 }
+              injobperm && /^[[:space:]]{4}[^[:space:]]/            { injobperm=0 }
+
+              # Remember which job calls the reusable workflow.
+              /security-scan\.yml@/ { caller=job }
+
+              # Job-level permissions REPLACE the top-level block, so the
+              # effective set is the job block when it declares one.
+              END {
+                if (caller == "") exit 1
+                if (hasown[caller]) exit (ok[caller] ? 0 : 1)
+                exit (topok ? 0 : 1)
+              }
+            ' .github/workflows/security.yml; then
+              note "security.yml calls the org security-scan but the calling job does not effectively grant 'actions: read' — every run is rejected as startup_failure."
+            fi
+          fi
+
+          # 2. gh-aw lock files are generated and only valid against the exact
+          #    gh-aw-actions/setup release that produced them. If Dependabot
+          #    bumps that action alone, the body calls helper scripts the new
+          #    release no longer ships (MODULE_NOT_FOUND).
+          #
+          #    The ignore must be `github/gh-aw-actions*` WITH the wildcard:
+          #    Dependabot names an action by its full path, so the dependency
+          #    is `github/gh-aw-actions/setup`, and a bare `github/gh-aw-actions`
+          #    matches nothing and silently protects nothing.
+          lockfiles=no
+          for f in .github/workflows/*.lock.yml; do
+            if [ -e "$f" ]; then lockfiles=yes; break; fi
+          done
+          if [ "$lockfiles" = yes ] && [ -f .github/dependabot.yml ]; then
+            if ! grep -q 'github/gh-aw-actions\*' .github/dependabot.yml; then
+              note "Repo has gh-aw *.lock.yml but dependabot.yml lacks the 'github/gh-aw-actions*' ignore (note the trailing '*' — without it the rule matches nothing)."
+            fi
+          fi
+
+          # 3. Even with the ignore in place, already-drifted lock files stay
+          #    broken. Compare the compiler that generated each file against
+          #    the setup action its body actually pins.
+          if [ "$lockfiles" = yes ]; then
+            for f in .github/workflows/*.lock.yml; do
+              [ -e "$f" ] || continue
+              cv=$(head -1 "$f" | grep -oE '"compiler_version":"[^"]*"' | cut -d'"' -f4)
+              bv=$(grep -m1 -oE 'gh-aw-actions/setup@[a-f0-9]+ # v[0-9.]+' "$f" | sed 's/.*# //')
+              if [ -n "$cv" ] && [ -n "$bv" ] && [ "$cv" != "$bv" ]; then
+                note "$f was compiled by gh-aw $cv but pins setup $bv — regenerate with 'gh aw compile'; do not hand-edit generated files."
+              fi
+            done
+          fi
+
+          # 4. Workflows targeting the self-hosted `zima` label need
+          #    .github/actionlint.yaml to declare it, or actionlint fails with
+          #    `label "zima" is unknown` the moment it is switched on.
+          #    Existence is not enough — an actionlint.yaml that omits the label
+          #    still fails. Require the label to actually be declared.
+          #    Match only the LITERAL array form of runs-on. The dynamic
+          #    USE_SELF_HOSTED toggle embeds the label inside an expression
+          #    actionlint cannot evaluate, so it never errors on those — and
+          #    matching them would warn repos that are actually fine.
+          if grep -rqE 'runs-on:[[:space:]]*\[[^]]*\bzima\b' .github/workflows/ 2>/dev/null; then
+            al=""
+            for f in .github/actionlint.yaml .github/actionlint.yml; do
+              if [ -f "$f" ]; then al="$f"; break; fi
+            done
+            if [ -z "$al" ]; then
+              note "Workflows use the self-hosted 'zima' label but there is no .github/actionlint.yaml (or .yml) declaring it under self-hosted-runner.labels."
+            elif ! grep -qE '^[[:space:]]*-[[:space:]]*zima[[:space:]]*$' "$al"; then
+              note "$al exists but does not declare 'zima' under self-hosted-runner.labels — actionlint will still fail with 'label \"zima\" is unknown'."
+            fi
+          fi
+
           # ── Summary ──────────────────────────────────────────────────────
           if [ "$violations" -eq 0 ]; then
             echo "repo-standards: all checks passed."

@@ -66,6 +66,17 @@ on:
         type: number
         required: false
         default: 15
+      runner:
+        description: >-
+          Label(s) the job runs on. Defaults to GitHub-hosted
+          `ubuntu-latest`; set to a self-hosted label (e.g. `self-hosted`)
+          to run on an org/repo self-hosted runner instead — useful when
+          GitHub-hosted minutes are exhausted. A single label string;
+          callers typically wire this to a repo variable so it can be
+          toggled without editing the workflow.
+        type: string
+        required: false
+        default: "ubuntu-latest"
 
 permissions:
   contents: read
@@ -73,7 +84,7 @@ permissions:
 jobs:
   ci:
     name: Node CI
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
       run:
@@ -98,12 +109,16 @@ jobs:
         with:
           bun-version: ${{ inputs.bun-version }}
 
-      - if: ${{ inputs.package-manager != 'bun' }}
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
+      # Runs for EVERY package manager, bun included. bun is the PM/runtime, but
+      # native and postinstall deps (sharp, cypress, …) spawn `node` during
+      # `bun install`, so a modern Node must be on PATH regardless — otherwise
+      # a runner whose system `node` is old (common on self-hosted) crashes the
+      # install. No npm/yarn/pnpm cache for bun; bun manages its own store.
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6.3.0
         with:
           node-version: ${{ inputs.node-version }}
-          cache: ${{ inputs.package-manager == 'yarn' && 'yarn' || inputs.package-manager == 'pnpm' && 'pnpm' || 'npm' }}
-          cache-dependency-path: ${{ inputs.cache-dependency-path }}
+          cache: ${{ inputs.package-manager == 'yarn' && 'yarn' || inputs.package-manager == 'pnpm' && 'pnpm' || inputs.package-manager == 'npm' && 'npm' || '' }}
+          cache-dependency-path: ${{ inputs.package-manager == 'bun' && '' || inputs.cache-dependency-path }}
 
       - name: Install
         env:
