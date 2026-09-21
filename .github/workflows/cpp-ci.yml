@@ -36,6 +36,30 @@ on:
         type: boolean
         required: false
         default: true
+      enable-clang-tidy:
+        description: >
+          Run clang-tidy over the compilation database (Linux only; not added
+          to the OS matrix). Requires a `.clang-tidy` at the CALLER's repo
+          root — copy config/cpp/.clang-tidy from resq-software/.github.
+          clang-tidy discovers that file by walking up from each translation
+          unit, so without it the job fails with "no checks enabled" rather
+          than silently analysing nothing. Off by default: a repo that has
+          never been analysed will have findings.
+        type: boolean
+        required: false
+        default: false
+      enable-sanitizers:
+        description: >
+          Debug build with ASan + UBSan, then ctest (Linux only). Builds in
+          `<build-dir>-sanitizers` and forces CMAKE_BUILD_TYPE=Debug, so it
+          ignores `build-config`. It also ignores `run-test` — running the
+          tests under sanitizers is the entire point of the job. Roughly
+          2-3x slower than the normal build; raise `timeout-minutes` if
+          needed. ASan and TSan cannot share a binary, so a TSan job would
+          have to be separate. Off by default.
+        type: boolean
+        required: false
+        default: false
       timeout-minutes:
         type: number
         required: false
@@ -84,3 +108,121 @@ jobs:
           BUILD: ${{ inputs.build-dir }}
           CONFIG: ${{ inputs.build-config }}
         run: ctest --test-dir "$BUILD" --output-on-failure -C "$CONFIG"
+
+  # ── clang-tidy (opt-in static analysis) ───────────────────────────────────
+  # Linux-only by design: one pass over the compilation database yields the
+  # same findings on every OS, so the three-OS matrix would triple the cost
+  # for nothing. Backs the Tier 3 safety overlay's static-analysis
+  # expectation (docs/standards/03-safety-overlay.md).
+  clang-tidy:
+    name: clang-tidy
+    if: ${{ inputs.enable-clang-tidy }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - name: Configure
+        shell: bash
+        env:
+          SRC: ${{ inputs.source-dir }}
+          BUILD: ${{ inputs.build-dir }}
+          FLAGS: ${{ inputs.cmake-flags }}
+        # shellcheck disable=SC2086 - FLAGS is intentionally word-split into
+        # multiple cmake arguments; quoting would pass them as a single token.
+        # EXPORT_COMPILE_COMMANDS goes after FLAGS so a caller cannot turn it
+        # off and leave the analysis step with no database to read.
+        run: |
+          # shellcheck disable=SC2086
+          cmake -B "$BUILD" $FLAGS -DCMAKE_EXPORT_COMPILE_COMMANDS=ON "$SRC"
+      - name: Run clang-tidy
+        shell: bash
+        env:
+          BUILD: ${{ inputs.build-dir }}
+        # Two resolution details, both verified by running them:
+        #  - run-clang-tidy looks for .clang-tidy relative to the WORKING
+        #    DIRECTORY, unlike plain clang-tidy which walks up from each
+        #    source file. Actions runs steps at the repo root, so a root
+        #    .clang-tidy is found -- but if the caller never adopted one the
+        #    driver dies with a bare "No checks enabled", which reads like a
+        #    tooling fault. Check first and say what to do about it.
+        #  - Prefer the versioned binaries: the runner image's own test suite
+        #    gates clang-tidy-N / run-clang-tidy-N, while the unversioned
+        #    names come only from update-alternatives, which no image test
+        #    covers. If neither resolves, the command substitution fails
+        #    under `set -e` rather than analysing zero files quietly.
+        run: |
+          set -euo pipefail
+          if [ ! -f .clang-tidy ]; then
+            echo "::error::No .clang-tidy at the repository root. Copy config/cpp/.clang-tidy from resq-software/.github, or set enable-clang-tidy: false."
+            exit 1
+          fi
+          TIDY="$(command -v clang-tidy-18 || command -v clang-tidy)"
+          DRIVER="$(command -v run-clang-tidy-18 || command -v run-clang-tidy)"
+          "$TIDY" --version
+          "$DRIVER" -p "$BUILD" -quiet -clang-tidy-binary "$TIDY"
+
+  # ── Sanitizers (opt-in ASan + UBSan) ──────────────────────────────────────
+  # ASan and TSan are mutually exclusive in one binary (both gcc and clang
+  # reject -fsanitize=address,thread outright), so TSan is deliberately not
+  # here; it would need its own job. ASan + UBSan combine cleanly.
+  sanitizers:
+    name: sanitizers (ASan+UBSan)
+    if: ${{ inputs.enable-sanitizers }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - name: Configure
+        shell: bash
+        env:
+          SRC: ${{ inputs.source-dir }}
+          BUILD: ${{ inputs.build-dir }}-sanitizers
+          FLAGS: ${{ inputs.cmake-flags }}
+        # Three things here are load-bearing, each verified:
+        #  - CMAKE_C_FLAGS as well as CXX: with CXX alone a C-language
+        #    consumer links no sanitizer runtime at all and every finding
+        #    is missed while the job stays green.
+        #  - -fno-sanitize-recover=all: plain -fsanitize=undefined PRINTS
+        #    the error and exits 0, so ctest reports 100% passed on code
+        #    with live UB. Without this flag the job is decorative.
+        #  - our -D flags come AFTER $FLAGS: cmake takes the last value, so
+        #    a caller passing -DCMAKE_CXX_FLAGS in cmake-flags would
+        #    otherwise silently disable the sanitizers.
+        # shellcheck disable=SC2086 - FLAGS is intentionally word-split.
+        run: |
+          set -euo pipefail
+          SAN="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g"
+          # shellcheck disable=SC2086
+          cmake -B "$BUILD" $FLAGS \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="$SAN" \
+            -DCMAKE_CXX_FLAGS="$SAN" \
+            -DCMAKE_EXE_LINKER_FLAGS="$SAN" \
+            -DCMAKE_SHARED_LINKER_FLAGS="$SAN" \
+            "$SRC"
+      - name: Build
+        shell: bash
+        env:
+          BUILD: ${{ inputs.build-dir }}-sanitizers
+        run: cmake --build "$BUILD" --config Debug
+      - name: Test
+        shell: bash
+        env:
+          BUILD: ${{ inputs.build-dir }}-sanitizers
+          # Runtime backstop for the compile-time -fno-sanitize-recover=all,
+          # in case a consumer's harness rebuilds without it. detect_leaks is
+          # already the Linux default; set explicitly to record the intent.
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        # --no-tests=error: ctest exits 0 on a project with zero registered
+        # tests. For a job whose purpose is running tests under sanitizers,
+        # "no tests" is a failure, not a pass.
+        run: ctest --test-dir "$BUILD" --output-on-failure -C Debug --no-tests=error
