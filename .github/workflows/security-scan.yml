@@ -237,6 +237,15 @@ jobs:
           GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
         run: |
           set -euo pipefail
+          # Fail fast and legibly on a runner this job cannot serve. Neither
+          # mismatch is a silent pass -- an arm64 runner dies on the binary
+          # with "Exec format error" and macOS has no sha256sum -- but a
+          # reusable workflow should name the contract it broke rather than
+          # leave a caller reading a libc error.
+          if [ "$(uname -s)" != "Linux" ] || [ "$(uname -m)" != "x86_64" ]; then
+            echo "::error::The gitleaks job requires a Linux x86-64 runner; got $(uname -s) $(uname -m). Point the runner input at a Linux x86-64 label, or set enable-gitleaks: false."
+            exit 1
+          fi
           TARBALL="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           curl -fsSL -o "$TARBALL" \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${TARBALL}"
