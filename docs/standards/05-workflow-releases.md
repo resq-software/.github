@@ -30,8 +30,15 @@ were waiting on a target that did not exist.
    The SHA is what runs; the comment is what lets Dependabot find the next
    version.
 3. **Consumers enable the `github-actions` ecosystem** in
-   `.github/dependabot.yml`. Dependabot then opens a bump PR per release —
-   propagation is systematic, and still reviewed.
+   `.github/dependabot.yml`. Its scheduled run then opens a grouped update
+   PR for whatever releases are available at that point — propagation is
+   systematic, and still reviewed.
+
+   Note what that does *not* promise. The scan is weekly and this repo's
+   own config groups all Actions updates, so several releases inside one
+   interval collapse into a single PR bumping straight to the newest. You
+   get every change, not every release as its own PR. A repo that wants
+   per-release granularity has to shorten the interval or drop the group.
 
 ## What is breaking
 
