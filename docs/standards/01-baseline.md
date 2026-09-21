@@ -15,8 +15,12 @@ Every repo must have, wired into CI via the org `required` check:
 - **Security scan** — the org `security-scan.yml`. Runs on every repo: OSV,
   zizmor, actionlint, plus opt-in Gitleaks/Semgrep/Snyk/vet. **CodeQL and
   Dependency Review additionally require GitHub Code Security enabled on
-  that repository**, unless it is public. On a private repo without it the
-  API returns 403 and those two legs do not run — so they are not part of
+  that repository**, unless it is public; without it the API returns 403.
+  The two fail differently, and neither fails quietly in the same way:
+  CodeQL is simply off unless the caller passes `languages`, but
+  `enable-dependency-review` defaults to `true` with no visibility guard, so
+  on a private repo without Code Security that job **runs and fails** until
+  the caller passes `enable-dependency-review: false`. Neither is part of
   the baseline every repo actually gets. Code Security can only be bought
   for organization-owned repositories on a Team or Enterprise plan.
 

@@ -43,11 +43,14 @@ This is the day-to-day checklist; the disclosure process lives in
 - **Semgrep** for custom org rules. **CodeQL** only where it is both available
   and licensed. Available: public repositories, or organization-owned
   repositories with GitHub Code Security — without it, code scanning returns
-  403 and cannot run at all. Licensed: the CodeQL CLI's terms grant CI/CD
-  database generation for an *Open Source Codebase* — one released under an
-  OSI-approved licence and hosted on GitHub.com — or under a paid Code
-  Security licence. Public alone is not enough for that test: a public repo
-  that is unlicensed or source-available is not an Open Source Codebase.
+  403 and cannot run at all. Licensed: the CodeQL CLI's terms define an
+  *Open Source Codebase* as one "released under an OSI-approved License",
+  and grant CI/CD database generation only where that codebase is "hosted
+  **and maintained** on GitHub.com" — or under a paid GitHub Advanced
+  Security licence (the SKU now sold as Code Security). Both halves bite:
+  a public repo that is unlicensed or source-available is not an Open
+  Source Codebase, and an OSI-licensed upstream that is merely mirrored to
+  GitHub.com is not maintained there.
   **A private repository without Code Security must not run CodeQL.**
 
 ## Web specifics
