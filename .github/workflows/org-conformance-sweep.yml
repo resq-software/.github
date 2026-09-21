@@ -234,15 +234,24 @@ jobs:
             #    Uses git/refs/tags, not /tags: the latter paginates by name and
             #    silently under-reports (68 of 185 on the largest repo).
             latest_rel=$(gh api "/repos/$ORG/$r/releases/latest" --jq '.tag_name' 2>/dev/null || true)
-            if [ -n "$latest_rel" ]; then
-              # Highest semver across all tags, comparing numerically on the
-              # trailing X.Y.Z so every tag grammar in the org is handled.
+            rel_ver=$(printf '%s' "$latest_rel" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$' || true)
+            if [ -n "$rel_ver" ]; then
+              # Compare WITHIN one component only. The contract allows
+              # independently versioned components, so the highest semver
+              # across the whole repo is the wrong yardstick: weighing
+              # resq-tui-v1.0.0 against a resq-cli release would invent a
+              # regression that does not exist. The component prefix is the
+              # release tag minus its trailing semver, which handles every
+              # grammar in the org -- "resq-cli-v", "v", "@scope/pkg@".
+              rel_prefix=${latest_rel%"$rel_ver"}
               top_tag=$(gh api "/repos/$ORG/$r/git/refs/tags" --paginate --jq '.[].ref' 2>/dev/null \
                 | sed 's|^refs/tags/||' \
-                | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$' \
+                | while IFS= read -r t; do
+                    case "$t" in "$rel_prefix"*) printf '%s\n' "${t#"$rel_prefix"}" ;; esac
+                  done \
+                | grep -xE '[0-9]+\.[0-9]+\.[0-9]+' \
                 | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 || true)
-              rel_ver=$(printf '%s' "$latest_rel" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$' || true)
-              if [ -n "$top_tag" ] && [ -n "$rel_ver" ] && [ "$top_tag" != "$rel_ver" ]; then
+              if [ -n "$top_tag" ] && [ "$top_tag" != "$rel_ver" ]; then
                 newest=$(printf '%s\n%s\n' "$top_tag" "$rel_ver" \
                   | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
                 if [ "$newest" = "$top_tag" ]; then
