@@ -24,6 +24,12 @@ Checks: >
   readability-function-size,
   readability-braces-around-statements
 
+# Off is already clang-tidy's default, but state it: this file is adopted by
+# COPY into other repos, where a monorepo root .clang-tidy is plausible. An
+# inherited ancestor config could otherwise reintroduce the empty
+# HeaderFilterRegex this config deliberately avoids.
+InheritParentConfig: false
+
 # Rule 10 — "all warnings on, zero warnings". Deliberately empty: clang-tidy
 # exits 0 even with findings, so a repo adopting this reports without going
 # red. Flip to '*' per-repository once that repository's baseline is clean.
