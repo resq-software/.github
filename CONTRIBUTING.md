@@ -76,7 +76,7 @@ each repo's `AGENTS.md`.
 2. Make atomic commits following Conventional Commits.
 3. Push; the pre-push hook runs `cargo check` / `ruff check` / `dotnet build` / etc. per the repo's `.git-hooks/local-pre-push`.
 4. Open the PR; fill out every section of the PR template.
-5. CI runs the org-wide `security-scan` workflow (CodeQL, Gitleaks, OSV-Scanner, Dependency Review) plus any repo-specific jobs. All bot reviewers (CodeRabbit, Gemini, GitHub Advanced Security) post asynchronously.
+5. CI runs the org-wide `security-scan` workflow — OSV-Scanner, zizmor and actionlint everywhere, Dependency Review on pull requests only, and CodeQL/Gitleaks/Semgrep/Snyk only where the repo opts in (see [SECURITY.md](./SECURITY.md#automated-scanning)) — plus any repo-specific jobs. Bot reviewers (CodeRabbit, Gemini, GitHub code scanning) post asynchronously.
 6. Address feedback; maintainers approve and merge.
 
 ## Security issues

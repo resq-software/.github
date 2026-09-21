@@ -54,4 +54,15 @@ We credit reporters in advisory text unless they ask to remain anonymous.
 
 ## Automated scanning
 
-Every repo runs the reusable [`security-scan`](.github/workflows/security-scan.yml) workflow on push + PR + weekly schedule: CodeQL, Gitleaks, OSV-Scanner, Dependency Review, plus optional Snyk when `SNYK_TOKEN` is configured. Findings are triaged by the maintainers listed in each repo's `CODEOWNERS`.
+Every repo runs the reusable [`security-scan`](.github/workflows/security-scan.yml) workflow on push + PR + weekly schedule. What actually runs is narrower than the job list, so it is written out rather than summarised:
+
+| Scan | With no caller overrides |
+| ---- | ------------------------ |
+| OSV-Scanner, zizmor, actionlint | on, every repo, every trigger |
+| Dependency Review | on, but **pull requests only** — never on push or the weekly schedule |
+| CodeQL | **off** unless the caller passes `languages`; also needs GitHub Code Security on a private repo |
+| Gitleaks, Semgrep, Snyk, vet | **off** unless the caller opts in (Semgrep and Snyk also need a token) |
+
+Two further limits worth knowing before relying on a green tick: CodeQL's analyze step runs `continue-on-error`, so it reports but cannot fail a build; and on a private repo without GitHub Code Security the Dependency Review job runs and *fails* rather than skipping, until the caller passes `enable-dependency-review: false`.
+
+Findings are triaged by the maintainers listed in each repo's `CODEOWNERS`.
