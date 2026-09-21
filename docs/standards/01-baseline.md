@@ -12,8 +12,22 @@ Every repo must have, wired into CI via the org `required` check:
 - **Type checker** — where the language has one (TS, Python, C#); enabled in
   strict mode.
 - **Tests** — for any non-trivial logic. New behavior ships with a test.
-- **Security scan** — the org `security-scan.yml` (CodeQL/OSV/Dependency Review/
-  zizmor/actionlint, opt-in Gitleaks/Semgrep/Snyk).
+- **Security scan** — the org `security-scan.yml`. Runs on every repo: OSV,
+  zizmor, actionlint. Gitleaks and Semgrep are opt-in through `required.yml`;
+  Snyk and vet are opt-in only for a repo that calls `security-scan.yml`
+  directly, since `required.yml` exposes no input for either.
+  **CodeQL and Dependency Review additionally require GitHub Code Security
+  enabled on that repository**, unless it is public; without it the API
+  returns 403. They fail differently:
+  CodeQL stays off unless the caller passes `languages` **and** that repo has
+  CodeQL *default setup* disabled — with default setup on, GitHub rejects the
+  advanced configuration, so `languages` alone is not enough.
+  `enable-dependency-review` defaults to `true` with no visibility guard, so
+  on a private repo without Code Security that job **runs and fails on every
+  pull request** until the caller passes `enable-dependency-review: false`.
+  Neither is part of the baseline every repo actually gets. Code Security can
+  only be bought for organization-owned repositories on a Team or Enterprise
+  plan.
 
 ## Hard rules
 

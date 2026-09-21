@@ -21,8 +21,18 @@ This is the day-to-day checklist; the disclosure process lives in
 - Never hardcode secrets. Use environment variables or a secret manager.
 - Validate required secrets are present at startup; fail fast if missing.
 - Rotate anything that may have been exposed; treat exposure as an incident.
-- GitHub native secret scanning + push protection are on; CI runs OSV/Dependency
-  Review, with opt-in Gitleaks/Semgrep/Snyk (see
+- GitHub native secret scanning and push protection **must be enabled on every
+  repository**. This is a requirement, not a description: repository-level push
+  protection and user-facing alerts are both off by default, and on private
+  repos both need GitHub Secret Protection, which is only available to
+  organization-owned repos on a Team or Enterprise plan. (Partner-pattern
+  alerts do run automatically on public repos, but they report to the provider
+  rather than to us.) Where a repo does not have them, the compensating control
+  is the opt-in Gitleaks scan in the required gate plus the shipped git hooks —
+  and the gap is written down in that repo's `AGENTS.md`.
+- CI runs OSV, zizmor and actionlint everywhere, with opt-in
+  Gitleaks/Semgrep/Snyk/vet; Dependency Review
+  needs Code Security on private repos (see
   [`security-scan.yml`](../../.github/workflows/security-scan.yml)).
 
 ## Reference standards
@@ -31,7 +41,20 @@ This is the day-to-day checklist; the disclosure process lives in
   and the [OWASP Cheat Sheet Series](https://cheatsheetseries.owasp.org/) for
   application security requirements.
 - **CERT** secure coding standards for C/C++/Java.
-- **Semgrep** for custom org rules; **CodeQL** for SAST (GitHub default setup).
+- **Semgrep** for custom org rules. **CodeQL** only where it is both available
+  and licensed. Available: public repositories, or organization-owned
+  repositories with GitHub Code Security — without it, code scanning returns
+  403 and cannot run at all. Licensed: the CodeQL CLI's terms define an
+  *Open Source Codebase* as one "released under an OSI-approved License",
+  and grant CI/CD database generation only where that codebase is "hosted
+  **and maintained** on GitHub.com" — or under a paid GitHub Advanced
+  Security licence. That is the licence's own wording; GitHub has since
+  split Advanced Security into Code Security and Secret Protection, and the
+  CodeQL entitlement sits in Code Security. Both halves bite:
+  a public repo that is unlicensed or source-available is not an Open
+  Source Codebase, and an OSI-licensed upstream that is merely mirrored to
+  GitHub.com is not maintained there.
+  **A private repository without Code Security must not run CodeQL.**
 
 ## Web specifics
 
