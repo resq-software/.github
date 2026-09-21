@@ -126,6 +126,15 @@ on:
         type: boolean
         required: false
         default: false
+      cpp-timeout-minutes:
+        description: >
+          Per-job timeout for the C++ jobs. Raise it when opting into
+          sanitizers (2-3x slower) or clang-tidy (a full build plus an
+          analysis pass). Matches cpp-ci.yml's own default, so leaving it
+          unset changes nothing.
+        type: number
+        required: false
+        default: 30
       submodules:
         description: >
           Checkout submodules for language-CI and CodeQL jobs. Pass 'true'
@@ -244,6 +253,7 @@ jobs:
       cmake-flags: ${{ inputs.cpp-cmake-flags }}
       enable-clang-tidy: ${{ inputs.cpp-enable-clang-tidy }}
       enable-sanitizers: ${{ inputs.cpp-enable-sanitizers }}
+      timeout-minutes: ${{ inputs.cpp-timeout-minutes }}
 
   # Template/standards conformance — lang-independent, runs for every repo.
   repo-standards:
