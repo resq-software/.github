@@ -108,6 +108,68 @@ jobs:
             if grep -q 'ResQ README Template' README.md; then
               note "README.md still contains the template scaffold marker comment."
             fi
+
+            # The four checks below were each dry-run against all 11 public
+            # repos before being added, and only defects a reader would
+            # actually hit are here. Section-presence checks that read well
+            # but measure badly (Security, Quick Start, Table of Contents)
+            # were tried and left out: they flag most of the org, and a gate
+            # that fires on nearly everything gets ignored, which is worse
+            # than no gate at all.
+            #
+            # Every check strips fenced code blocks first, so markup quoted
+            # inside a ``` block is never mistaken for the real thing.
+            rs_body=$(mktemp)
+            rs_links=$(mktemp)
+            # Strip fenced blocks AND inline code spans. The inline pass is
+            # load-bearing: a README documenting link syntax in a `[x](y.md)`
+            # code span would otherwise be reported as having a broken link.
+            # shellcheck disable=SC2016  # the backticks are literal Markdown
+            # delimiters, not command substitution.
+            sed -e '/^[[:space:]]*```/,/^[[:space:]]*```/d' -e 's/`[^`]*`//g' \
+              README.md > "$rs_body"
+
+            # 1. Relative links that point at nothing. The reader-visible
+            #    failure is a 404 on a file the README promises.
+            grep -oE '\]\([^)#][^)]*\)' "$rs_body" | sort -u > "$rs_links"
+            # Redirected, NOT piped: a pipeline would run note() in a
+            # subshell and silently discard the violation count. Stripping
+            # is done with parameter expansion rather than sed so no regex
+            # anchor has to live inside single quotes.
+            while IFS= read -r rs_raw; do
+              rs_tgt=${rs_raw#](}
+              rs_tgt=${rs_tgt%)}
+              case "$rs_tgt" in
+                http:*|https:*|mailto:*|'#'*|'') continue ;;
+              esac
+              rs_path=${rs_tgt%%#*}
+              rs_path=${rs_path%%\?*}
+              [ -n "$rs_path" ] || continue
+              if [ ! -e "$rs_path" ]; then
+                note "README.md links to '$rs_path', which does not exist in this repo."
+              fi
+            done < "$rs_links"
+
+            # 2. Duplicate H2s: one of the two is stale, and a reader cannot
+            #    tell which is authoritative.
+            rs_dupes=$(grep -E '^## ' "$rs_body" | sort | uniq -d | tr '\n' ' ')
+            if [ -n "$rs_dupes" ]; then
+              note "README.md has duplicate H2 headings: $rs_dupes"
+            fi
+
+            # 3. Say what the repo IS before the first section. All 11 public
+            #    repos already do; this guards against regression.
+            if ! sed -n '1,/^## /p' "$rs_body" | grep -qE '^[[:space:]]*[A-Za-z*_<`[]'; then
+              note "README.md has no description line before the first '## ' section."
+            fi
+
+            # 4. Loose on purpose so it matches '## License', '### Licence'
+            #    and '## 📄 License' alike. 10 of 11 public repos pass today.
+            if ! grep -qiE '^#{2,3} .*licen[sc]e' README.md; then
+              note "README.md has no License section."
+            fi
+
+            rm -f "$rs_body" "$rs_links"
           fi
 
           # ── CI configuration ─────────────────────────────────────────────
