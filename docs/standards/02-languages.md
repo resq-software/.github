@@ -105,6 +105,6 @@ Tooling baseline; the analyzability rules live in [Tier 3](./03-safety-overlay.m
 
 ## Release & versioning
 
-Conventional Commits drive versioning. Per-ecosystem tooling (release-it, PSR,
-cargo-release/release-plz, MinVer) is documented in the
-[README template's automation appendix](../../README.template.md).
+Conventional Commits drive versioning. Tag grammar, the version-source-of-truth
+rule and the per-ecosystem tooling actually in use are specified in
+[`06-versioning.md`](./06-versioning.md).
