@@ -76,6 +76,9 @@ cargo deny check
 Tooling baseline; the analyzability rules live in [Tier 3](./03-safety-overlay.md).
 
 - `clang-format` + `clang-tidy`; build clean at `-Wall -Wextra -Werror`.
+  Canonical checks: [`config/cpp/.clang-tidy`](../../config/cpp/.clang-tidy)
+  — copy to the repo root; see [`config/README.md`](../../config/README.md)
+  for what it does and does not enforce.
 - Sanitizers (ASan/UBSan/TSan) in test builds; static analysis in CI.
 - C++: modern, RAII, smart pointers, STL; avoid raw `new`/`delete`, RTTI-heavy
   designs, and clever template metaprogramming without a systems reason.
