@@ -29,13 +29,13 @@ Checks: >
 # red. Flip to '*' per-repository once that repository's baseline is clean.
 WarningsAsErrors: ''
 
-# NARROWER THAN THE clang-tidy DEFAULT ('.*'). Empty means project headers are
-# not diagnosed at all — inline functions, templates and header-only code go
-# unchecked. Kept empty so first adoption is tractable; a repo whose logic
-# lives in headers must widen this to a project-scoped regex or the green tick
-# understates coverage. (System headers are suppressed separately, regardless
-# of this value.)
-HeaderFilterRegex: ''
+# HeaderFilterRegex is deliberately NOT set: clang-tidy's own default is '.*',
+# which analyses project headers. Setting it to '' would silently drop every
+# diagnostic in a header, so inline functions, templates and header-only code
+# would go unchecked while CI still reported green — unacceptable under a
+# safety overlay. A repo vendoring third-party headers should narrow this to a
+# project-scoped regex rather than emptying it. (System headers are suppressed
+# by a separate mechanism regardless of this value.)
 
 FormatStyle: file
 

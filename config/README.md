@@ -63,6 +63,13 @@ findings and still exits 0; a repo that has never been analysed will have a
 large first count. Flip `WarningsAsErrors` to `'*'` in that repo's own copy
 once its baseline is clean — not before, and not org-wide at once.
 
+Project headers **are** analysed: the config deliberately does not set
+`HeaderFilterRegex`, so clang-tidy's own `.*` default applies and inline,
+template and header-only code is checked like anything else. Setting it to
+`''` would drop those diagnostics silently while CI still reported green. A
+repo vendoring third-party headers should narrow it to a project-scoped
+regex rather than emptying it.
+
 Validate a copy with `clang-tidy --config-file=.clang-tidy --verify-config`.
 Do **not** validate with `--list-checks`: it exits 0 and prints nothing even
 when the config names a check or option key that does not exist.
