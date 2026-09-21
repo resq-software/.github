@@ -48,7 +48,7 @@ with a trailing `# <tag>` comment so Dependabot can still propose updates.
 | :-- | :-- | :-- |
 | `harden-runner` (first step in every job) | Audit/block runner egress — defense vs hijacked actions (tj-actions-class) | `audit` |
 | `codeql` | SAST per language | opt-in via `languages` |
-| `gitleaks` | Git history secret scan; requires `GITLEAKS_LICENSE` even on public org repos | off |
+| `gitleaks` | Full git-history secret scan via the MIT gitleaks CLI (pinned + checksum-verified); no licence key | off |
 | `osv-scanner` | Dependency vuln scan (Google OSV) | on |
 | `dependency-review` | PR-only; blocks high-severity CVEs | on |
 | `zizmor` | Static audit of `.github/workflows/**` for security anti-patterns | on |
@@ -82,7 +82,7 @@ jobs:
 | Input | Type | Default | Notes |
 | :-- | :-- | :-- | :-- |
 | `languages` | string (JSON array) | `"[]"` | CodeQL languages. Omit/empty to skip CodeQL. Valid: `actions`, `c-cpp`, `csharp`, `go`, `java-kotlin`, `javascript-typescript`, `python`, `ruby`, `swift`. |
-| `enable-gitleaks` | bool | `false` | Requires `GITLEAKS_LICENSE` repo/org secret even on public repos owned by an org. GitHub's native secret scanning + push protection cover most use cases. |
+| `enable-gitleaks` | bool | `false` | MIT gitleaks CLI, pinned by version + SHA256. No licence key. Needs `fetch-depth: 0` (the job sets it). Linux x86-64 runners only. |
 | `enable-osv` | bool | `true` | |
 | `enable-dependency-review` | bool | `true` | PR runs only. |
 | `enable-zizmor` | bool | `true` | |
@@ -94,7 +94,7 @@ jobs:
 
 - `SEMGREP_APP_TOKEN` — from [semgrep.dev](https://semgrep.dev) → Settings → Tokens. Scope: CI.
 - `SNYK_TOKEN` — from Snyk account settings.
-- `GITLEAKS_LICENSE` — only needed for private-repo Gitleaks scans.
+- `GITLEAKS_LICENSE` — **deprecated and unused**. The gitleaks job runs the MIT CLI, which needs no key. Still declared so existing callers don't error; it will be removed in a future breaking change.
 
 `secrets: inherit` in the caller forwards all org/repo secrets. Note: GitHub does **not** grant secrets to Dependabot-triggered runs, so a caller using `secrets: inherit` will `startup_failure` on Dependabot PRs — guard the job with `if: ${{ github.actor != 'dependabot[bot]' }}` (as in the template above) so those PRs aren't blocked.
 

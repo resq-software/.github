@@ -7,7 +7,7 @@
 # Defense-in-depth layers:
 #   harden-runner       Audit/block runner egress (defense vs hijacked actions)
 #   codeql              SAST per language
-#   gitleaks            Git history secret scan
+#   gitleaks            Git history secret scan (MIT CLI, pinned + checksummed)
 #   osv-scanner         Dependency vulnerability scan (Google OSV)
 #   dependency-review   PR-only; blocks high-severity CVEs
 #   snyk                Opt-in; requires SNYK_TOKEN
@@ -33,8 +33,11 @@ on:
         default: "[]"
       enable-gitleaks:
         description: >
-          Requires GITLEAKS_LICENSE (even for public org repos). Off by default —
-          GitHub's native secret scanning + push protection cover public repos.
+          Full git-history secret scan using the MIT gitleaks CLI, pinned by
+          version and verified by checksum. Needs no licence key. Off by
+          default — GitHub's native secret scanning covers repositories that
+          have it enabled. Assumes a Linux x86-64 runner; a caller pointing
+          `runner` at an arm64 or macOS label must change the pinned asset.
         type: boolean
         required: false
         default: false
@@ -98,7 +101,11 @@ on:
     # its matching `enable-*` input, so omitting one is a no-op.
     secrets:
       GITLEAKS_LICENSE:
-        description: GitLeaks license key. Used only when enable-gitleaks is true.
+        description: >
+          DEPRECATED — unused since the gitleaks job moved to the MIT CLI,
+          which requires no licence key. Kept declared so existing callers
+          that still pass it do not error; removing it is a breaking change
+          and a separate PR.
         required: false
       SEMGREP_APP_TOKEN:
         description: Semgrep App token. Used only when enable-semgrep is true.
@@ -199,6 +206,13 @@ jobs:
         continue-on-error: true   # default-setup collision otherwise fails
 
   # ── Gitleaks ──────────────────────────────────────────────────────────────
+  # The MIT gitleaks CLI, pinned by version and checksum — deliberately NOT
+  # gitleaks/gitleaks-action. That Action is a separate product under a
+  # proprietary Gitleaks LLC EULA which requires a paid licence key for any
+  # repository owned by an Organization account. The CLI downloaded here is
+  # the MIT-licensed tool and carries no such terms and no key.
+  #
+  # Linux x86-64 only: the pinned asset and checksum are for that platform.
   gitleaks:
     name: gitleaks
     if: ${{ inputs.enable-gitleaks }}
@@ -210,11 +224,42 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
+          # Load-bearing, not boilerplate: on a shallow clone gitleaks scans
+          # only the tip commit and reports "no leaks found" for a secret
+          # that is sitting in history.
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
+      - name: Install + run gitleaks
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          # Bump both together; the checksum is from the release's own
+          # gitleaks_<version>_checksums.txt.
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          set -euo pipefail
+          TARBALL="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "$TARBALL" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${TARBALL}"
+          # Verify BEFORE executing. The release is not marked immutable, so
+          # this checksum is what actually provides integrity here.
+          echo "${GITLEAKS_SHA256}  ${TARBALL}" | sha256sum -c -
+          tar -xzf "$TARBALL" gitleaks
+          # `gitleaks git <path>` on something that is not a git repository
+          # logs an error and still exits 0 with "no leaks found". Assert the
+          # checkout is a real repo so a misconfiguration cannot green-light
+          # the scan.
+          git rev-parse --git-dir > /dev/null
+          # --exit-code 2 separates the two outcomes that both default to 1:
+          # 2 = secrets found, 1 = gitleaks itself failed to run.
+          ./gitleaks git . --no-banner --redact --exit-code 2 || {
+            rc=$?
+            if [ "$rc" -eq 2 ]; then
+              echo "::error::gitleaks found secrets in git history — see the log above."
+            else
+              echo "::error::gitleaks failed to run (exit $rc); this is a tool/config failure, not a clean scan."
+            fi
+            exit "$rc"
+          }
 
   # ── OSV-Scanner ───────────────────────────────────────────────────────────
   osv-scanner:
