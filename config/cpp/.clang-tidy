@@ -1,0 +1,57 @@
+# Canonical ResQ clang-tidy config — copy to a repo root as .clang-tidy.
+# Encodes the static-analysis half of docs/standards/03-safety-overlay.md
+# (Tier 3). Run: clang-tidy -p <build-dir> --config-file=.clang-tidy <files>
+#
+# Every group below is traceable to a NASA/JPL Power of Ten rule. Rules 2
+# (statically provable loop bounds), 5 (assert liberally), 6 (smallest scope)
+# and 9 (pointer/dereference depth) have NO clang-tidy equivalent and stay
+# review-only. Rule 1 is only partly mechanical: avoid-goto does not flag a
+# forward goto escaping nested loops. See the coverage table in
+# config/README.md.
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  cppcoreguidelines-no-malloc,
+  cppcoreguidelines-owning-memory,
+  cppcoreguidelines-macro-usage,
+  cppcoreguidelines-avoid-goto,
+  cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  cppcoreguidelines-pro-type-cstyle-cast,
+  cppcoreguidelines-init-variables,
+  misc-no-recursion,
+  readability-function-size,
+  readability-braces-around-statements
+
+# Off is already clang-tidy's default, but state it: this file is adopted by
+# COPY into other repos, where a monorepo root .clang-tidy is plausible. An
+# inherited ancestor config could otherwise reintroduce the empty
+# HeaderFilterRegex this config deliberately avoids.
+InheritParentConfig: false
+
+# Rule 10 — "all warnings on, zero warnings". Deliberately empty: clang-tidy
+# exits 0 even with findings, so a repo adopting this reports without going
+# red. Flip to '*' per-repository once that repository's baseline is clean.
+WarningsAsErrors: ''
+
+# HeaderFilterRegex is deliberately NOT set: clang-tidy's own default is '.*',
+# which analyses project headers. Setting it to '' would silently drop every
+# diagnostic in a header, so inline functions, templates and header-only code
+# would go unchecked while CI still reported green — unacceptable under a
+# safety overlay. A repo vendoring third-party headers should narrow this to a
+# project-scoped regex rather than emptying it. (System headers are suppressed
+# by a separate mechanism regardless of this value.)
+
+FormatStyle: file
+
+CheckOptions:
+  # Rule 4 — "keep functions small; one printed page; one responsibility"
+  - key: readability-function-size.LineThreshold
+    value: '60'
+  - key: readability-function-size.StatementThreshold
+    value: '50'
+  - key: readability-function-size.NestingThreshold
+    value: '4'
+  - key: readability-function-size.ParameterThreshold
+    value: '6'
