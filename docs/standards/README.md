@@ -22,6 +22,7 @@ devices, telemetry, auth, crypto, or runs unattended.
 | **2 — Language enforcement** | Per-language tooling & idioms | [`02-languages.md`](./02-languages.md) |
 | **3 — Safety/critical overlay** | C/C++/Rust, device- & flight-adjacent | [`03-safety-overlay.md`](./03-safety-overlay.md) |
 | **Security overlay** | Anything handling untrusted input, secrets, or auth | [`04-security.md`](./04-security.md) |
+| **Workflow releases** | How a change here reaches consumer repos | [`05-workflow-releases.md`](./05-workflow-releases.md) |
 
 ## The standard stack
 

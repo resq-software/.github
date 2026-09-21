@@ -25,7 +25,11 @@ on:
   workflow_call:
     inputs:
       strict:
-        description: Fail the job on any violation. Default warns (annotations only).
+        description: >
+          Fail the job on any violation instead of annotating. Covers every
+          check in this workflow — LICENSE, README shape, README content
+          (description line, License section, unique H2s, working relative
+          links) and template-token leftovers. Default warns only.
         type: boolean
         required: false
         default: false

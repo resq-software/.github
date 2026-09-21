@@ -145,9 +145,11 @@ on:
       repo-standards-strict:
         description: >
           Fail `required` when the repo violates template/standards
-          conformance (LICENSE present, non-stub README, no leftover
-          {{PLACEHOLDER}} tokens). Default warns only — flip to true once
-          the repo is clean.
+          conformance. Checks: a LICENSE file; a non-stub README with a
+          title, a description line before the first section, a License
+          section, unique H2 headings, and no broken repo-relative links;
+          and no leftover {{PLACEHOLDER}} tokens or scaffold marker.
+          Default warns only — flip to true once the repo is clean.
         type: boolean
         required: false
         default: false
