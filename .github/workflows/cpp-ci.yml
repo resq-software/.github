@@ -40,11 +40,11 @@ on:
         description: >
           Run clang-tidy over the compilation database (Linux only; not added
           to the OS matrix). Requires a `.clang-tidy` at the CALLER's repo
-          root — copy config/cpp/.clang-tidy from resq-software/.github.
-          clang-tidy discovers that file by walking up from each translation
-          unit, so without it the job fails with "no checks enabled" rather
-          than silently analysing nothing. Off by default: a repo that has
-          never been analysed will have findings.
+          root — copy config/cpp/.clang-tidy from resq-software/.github. The
+          job checks for that file explicitly, because the no-config fallback
+          is quiet: clang-tidy would analyse with its own built-in defaults
+          and report green on a check set that is not this overlay's. Off by
+          default: a repo that has never been analysed will have findings.
         type: boolean
         required: false
         default: false
@@ -138,6 +138,18 @@ jobs:
         run: |
           # shellcheck disable=SC2086
           cmake -B "$BUILD" $FLAGS -DCMAKE_EXPORT_COMPILE_COMMANDS=ON "$SRC"
+      - name: Build
+        shell: bash
+        env:
+          BUILD: ${{ inputs.build-dir }}
+          CONFIG: ${{ inputs.build-config }}
+        # clang-tidy reads the compilation database but not the rules that
+        # produce generated sources. Without a build first, a repo using
+        # protobuf, moc, bison or any add_custom_command(OUTPUT <header>)
+        # hits "file not found [clang-diagnostic-error]" — a hard error that
+        # WarningsAsErrors: '' cannot downgrade, so the warn-only promise
+        # would not hold for exactly those repos.
+        run: cmake --build "$BUILD" --config "$CONFIG"
       - name: Run clang-tidy
         shell: bash
         env:
@@ -146,9 +158,13 @@ jobs:
         #  - run-clang-tidy looks for .clang-tidy relative to the WORKING
         #    DIRECTORY, unlike plain clang-tidy which walks up from each
         #    source file. Actions runs steps at the repo root, so a root
-        #    .clang-tidy is found -- but if the caller never adopted one the
-        #    driver dies with a bare "No checks enabled", which reads like a
-        #    tooling fault. Check first and say what to do about it.
+        #    .clang-tidy is found. The explicit check earns its place because
+        #    the no-config fallback is version-dependent: clang-tidy 18, what
+        #    ubuntu-latest currently ships, defaults to
+        #    clang-diagnostic-*,clang-analyzer-* and would analyse every file
+        #    with the Static Analyzer set and exit 0 -- green, on checks
+        #    nobody asked for. Newer clang-tidy errors out instead. Neither
+        #    is the overlay the caller opted into.
         #  - Prefer the versioned binaries: the runner image's own test suite
         #    gates clang-tidy-N / run-clang-tidy-N, while the unversioned
         #    names come only from update-alternatives, which no image test
