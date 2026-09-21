@@ -12,8 +12,13 @@ Every repo must have, wired into CI via the org `required` check:
 - **Type checker** — where the language has one (TS, Python, C#); enabled in
   strict mode.
 - **Tests** — for any non-trivial logic. New behavior ships with a test.
-- **Security scan** — the org `security-scan.yml` (CodeQL/OSV/Dependency Review/
-  zizmor/actionlint, opt-in Gitleaks/Semgrep/Snyk).
+- **Security scan** — the org `security-scan.yml`. Runs on every repo: OSV,
+  zizmor, actionlint, plus opt-in Gitleaks/Semgrep/Snyk/vet. **CodeQL and
+  Dependency Review additionally require GitHub Code Security enabled on
+  that repository**, unless it is public. On a private repo without it the
+  API returns 403 and those two legs do not run — so they are not part of
+  the baseline every repo actually gets. Code Security can only be bought
+  for organization-owned repositories on a Team or Enterprise plan.
 
 ## Hard rules
 
