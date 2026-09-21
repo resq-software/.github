@@ -19,8 +19,8 @@ Every repo must have, wired into CI via the org `required` check:
   The two fail differently, and neither fails quietly in the same way:
   CodeQL is simply off unless the caller passes `languages`, but
   `enable-dependency-review` defaults to `true` with no visibility guard, so
-  on a private repo without Code Security that job **runs and fails** until
-  the caller passes `enable-dependency-review: false`. Neither is part of
+  on a private repo without Code Security that job **runs and fails on every
+  pull request** until the caller passes `enable-dependency-review: false`. Neither is part of
   the baseline every repo actually gets. Code Security can only be bought
   for organization-owned repositories on a Team or Enterprise plan.
 

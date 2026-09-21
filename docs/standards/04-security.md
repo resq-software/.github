@@ -47,7 +47,9 @@ This is the day-to-day checklist; the disclosure process lives in
   *Open Source Codebase* as one "released under an OSI-approved License",
   and grant CI/CD database generation only where that codebase is "hosted
   **and maintained** on GitHub.com" — or under a paid GitHub Advanced
-  Security licence (the SKU now sold as Code Security). Both halves bite:
+  Security licence. That is the licence's own wording; GitHub has since
+  split Advanced Security into Code Security and Secret Protection, and the
+  CodeQL entitlement sits in Code Security. Both halves bite:
   a public repo that is unlicensed or source-available is not an Open
   Source Codebase, and an OSI-licensed upstream that is merely mirrored to
   GitHub.com is not maintained there.
