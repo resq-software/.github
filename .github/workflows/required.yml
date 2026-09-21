@@ -111,6 +111,30 @@ on:
         type: string
         required: false
         default: ""
+      cpp-enable-clang-tidy:
+        description: >
+          Opt into cpp-ci.yml's clang-tidy job. Needs a `.clang-tidy` at this
+          repo's root — copy config/cpp/.clang-tidy. Warn-only until that
+          copy sets WarningsAsErrors.
+        type: boolean
+        required: false
+        default: false
+      cpp-enable-sanitizers:
+        description: >
+          Opt into cpp-ci.yml's ASan+UBSan job. Debug build, runs ctest, and
+          fails on a sanitizer finding or on a project with no tests.
+        type: boolean
+        required: false
+        default: false
+      cpp-timeout-minutes:
+        description: >
+          Per-job timeout for the C++ jobs. Raise it when opting into
+          sanitizers (2-3x slower) or clang-tidy (a full build plus an
+          analysis pass). Matches cpp-ci.yml's own default, so leaving it
+          unset changes nothing.
+        type: number
+        required: false
+        default: 30
       submodules:
         description: >
           Checkout submodules for language-CI and CodeQL jobs. Pass 'true'
@@ -227,6 +251,9 @@ jobs:
       os-list: ${{ inputs.cpp-os-list }}
       source-dir: ${{ inputs.cpp-source-dir }}
       cmake-flags: ${{ inputs.cpp-cmake-flags }}
+      enable-clang-tidy: ${{ inputs.cpp-enable-clang-tidy }}
+      enable-sanitizers: ${{ inputs.cpp-enable-sanitizers }}
+      timeout-minutes: ${{ inputs.cpp-timeout-minutes }}
 
   # Template/standards conformance — lang-independent, runs for every repo.
   repo-standards:
