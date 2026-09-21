@@ -5,7 +5,9 @@
 # Every group below is traceable to a NASA/JPL Power of Ten rule. Rules 2
 # (statically provable loop bounds), 5 (assert liberally), 6 (smallest scope)
 # and 9 (pointer/dereference depth) have NO clang-tidy equivalent and stay
-# review-only — see the coverage table in config/README.md.
+# review-only. Rule 1 is only partly mechanical: avoid-goto does not flag a
+# forward goto escaping nested loops. See the coverage table in
+# config/README.md.
 Checks: >
   -*,
   bugprone-*,

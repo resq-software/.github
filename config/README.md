@@ -76,7 +76,7 @@ ten rules have no mechanical equivalent at all.
 
 | Rule | Enforced by | Coverage |
 | ---- | ----------- | -------- |
-| 1 — no unbounded recursion; simple control flow | `misc-no-recursion`, `cppcoreguidelines-avoid-goto` | **mechanical** |
+| 1 — no unbounded recursion; simple control flow | `misc-no-recursion`, `cppcoreguidelines-avoid-goto`, `cert-err52-cpp` | partial — recursion and `setjmp`/`longjmp` are mechanical, but `avoid-goto` permits a forward `goto` that escapes nested loops, which `03-safety-overlay.md` bans outright |
 | 4 — keep functions small | `readability-function-size` | **mechanical** |
 | 3 — no dynamic allocation after init | `cppcoreguidelines-no-malloc`, `-owning-memory` | partial — flags allocation anywhere; the "after initialization" condition is not expressible |
 | 7 — check every return value; check parameters | `bugprone-unused-return-value`, `cert-err33-c` | partial — a curated function list, not all non-void calls; the parameter-checking clause has no check |
