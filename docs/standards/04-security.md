@@ -30,7 +30,8 @@ This is the day-to-day checklist; the disclosure process lives in
   rather than to us.) Where a repo does not have them, the compensating control
   is the opt-in Gitleaks scan in the required gate plus the shipped git hooks —
   and the gap is written down in that repo's `AGENTS.md`.
-- CI runs OSV everywhere, with opt-in Gitleaks/Semgrep/Snyk; Dependency Review
+- CI runs OSV, zizmor and actionlint everywhere, with opt-in
+  Gitleaks/Semgrep/Snyk/vet; Dependency Review
   needs Code Security on private repos (see
   [`security-scan.yml`](../../.github/workflows/security-scan.yml)).
 
