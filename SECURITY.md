@@ -63,6 +63,19 @@ Every repo runs the reusable [`security-scan`](.github/workflows/security-scan.y
 | CodeQL | **off** unless the caller passes `languages` **and** the repo has CodeQL *default setup* disabled — with default setup on, GitHub rejects the advanced configuration, so passing `languages` alone is not enough; also needs GitHub Code Security on a private repo |
 | Gitleaks, Semgrep, Snyk, vet | **off** unless the caller opts in (Semgrep and Snyk also need a token) |
 
-Two further limits worth knowing before relying on a green tick: CodeQL's analyze step runs `continue-on-error`, so it reports but cannot fail a build; and on a private repo without GitHub Code Security the Dependency Review job runs and *fails* rather than skipping, until the caller passes `enable-dependency-review: false`.
+Three further limits worth knowing before relying on a green tick:
+
+- **CodeQL findings cannot fail a build, but CodeQL can.** Only the `Analyze`
+  step carries `continue-on-error`, so a finding is reported and not enforced
+  — yet `Initialize CodeQL` and `Autobuild` do not, and a failure in either
+  fails the job and the `required` gate. Autobuild failure is the common case
+  for the compiled languages the input advertises (`c-cpp`, `csharp`, `go`,
+  `java-kotlin`, `swift`).
+- **zizmor findings cannot fail a build either.** Both its scan step and its
+  SARIF upload are `continue-on-error`, so the row above marking it "on, every
+  repo" means it always *runs*, not that it can ever block a merge.
+- **Dependency Review fails rather than skips.** On a private repo without
+  GitHub Code Security the job runs and *fails* on every pull request, until
+  the caller passes `enable-dependency-review: false`.
 
 Findings are triaged by the maintainers listed in each repo's `CODEOWNERS`.
