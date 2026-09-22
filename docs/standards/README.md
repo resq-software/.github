@@ -23,6 +23,7 @@ devices, telemetry, auth, crypto, or runs unattended.
 | **3 — Safety/critical overlay** | C/C++/Rust, device- & flight-adjacent | [`03-safety-overlay.md`](./03-safety-overlay.md) |
 | **Security overlay** | Anything handling untrusted input, secrets, or auth | [`04-security.md`](./04-security.md) |
 | **Workflow releases** | How a change here reaches consumer repos | [`05-workflow-releases.md`](./05-workflow-releases.md) |
+| **Versioning & release** | Tag grammar, version source of truth, per-ecosystem tooling | [`06-versioning.md`](./06-versioning.md) |
 
 ## The standard stack
 
