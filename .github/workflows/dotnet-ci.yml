@@ -64,13 +64,13 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2
         with:
           egress-policy: audit
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: ${{ inputs.submodules }}
-      - uses: actions/setup-dotnet@3e891b0cb619bf60e2c25674b222b8940e2c1c25  # v4
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v4
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
       - name: Restore
@@ -99,13 +99,13 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2
         with:
           egress-policy: audit
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: ${{ inputs.submodules }}
-      - uses: actions/setup-dotnet@3e891b0cb619bf60e2c25674b222b8940e2c1c25  # v4
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v4
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
       - name: dotnet format
@@ -126,13 +126,13 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2
         with:
           egress-policy: audit
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: ${{ inputs.submodules }}
-      - uses: actions/setup-dotnet@3e891b0cb619bf60e2c25674b222b8940e2c1c25  # v4
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v4
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
       - name: dotnet test
