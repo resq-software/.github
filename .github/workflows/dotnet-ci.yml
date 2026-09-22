@@ -50,6 +50,18 @@ on:
         type: string
         required: false
         default: ""
+      fetch-depth:
+        description: >
+          Commit history depth for checkout. Default 1 (shallow) preserves
+          existing behaviour. Set to 0 for a repo using MinVer or any other
+          git-tag-derived versioning: those need full history AND tags, and
+          without them MinVer silently computes 0.0.0-alpha.0 rather than
+          failing. This workflow only builds and tests, so a wrong version
+          here does not publish — but a repo that adds a pack step would
+          ship it. See docs/standards/06-versioning.md.
+        type: number
+        required: false
+        default: 1
 
 permissions:
   contents: read
@@ -70,6 +82,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: ${{ inputs.submodules }}
+          fetch-depth: ${{ inputs.fetch-depth }}
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
@@ -105,6 +118,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: ${{ inputs.submodules }}
+          fetch-depth: ${{ inputs.fetch-depth }}
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
@@ -132,6 +146,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: ${{ inputs.submodules }}
+          fetch-depth: ${{ inputs.fetch-depth }}
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
