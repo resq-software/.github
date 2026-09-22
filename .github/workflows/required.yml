@@ -99,6 +99,15 @@ on:
         type: string
         required: false
         default: ""
+      dotnet-fetch-depth:
+        description: >
+          Commit history depth for the .NET jobs' checkout. Default 1
+          (shallow). Set to 0 for a repo using MinVer or other tag-derived
+          versioning — those need full history and tags, and without them
+          MinVer silently computes 0.0.0-alpha.0 rather than failing.
+        type: number
+        required: false
+        default: 1
       cpp-os-list:
         type: string
         required: false
@@ -243,6 +252,7 @@ jobs:
       solution: ${{ inputs.dotnet-solution }}
       working-directory: ${{ inputs.working-directory }}
       submodules: ${{ inputs.submodules }}
+      fetch-depth: ${{ inputs.dotnet-fetch-depth }}
 
   cpp:
     needs: [validate-lang]
