@@ -109,7 +109,11 @@ jobs:
           cache-targets: "false"
           # Only main writes cache entries; PRs (and other low-trust refs)
           # restore-only. Closes the untrusted-write cache-poisoning vector.
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # pull_request_target is excluded explicitly: as a reusable workflow we
+          # inherit the caller's context, and for pull_request_target github.ref is
+          # the BASE branch (refs/heads/main), so the ref check alone would let an
+          # untrusted PR write the cache.
+          save-if: ${{ github.event_name != 'pull_request_target' && github.ref == 'refs/heads/main' }}
       - name: cargo clippy
         env:
           FLAGS: ${{ inputs.clippy-flags }}
@@ -146,7 +150,11 @@ jobs:
           cache-targets: "false"
           # Only main writes cache entries; PRs (and other low-trust refs)
           # restore-only. Closes the untrusted-write cache-poisoning vector.
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # pull_request_target is excluded explicitly: as a reusable workflow we
+          # inherit the caller's context, and for pull_request_target github.ref is
+          # the BASE branch (refs/heads/main), so the ref check alone would let an
+          # untrusted PR write the cache.
+          save-if: ${{ github.event_name != 'pull_request_target' && github.ref == 'refs/heads/main' }}
       - if: ${{ !inputs.run-coverage }}
         name: cargo test
         env:
