@@ -99,6 +99,17 @@ jobs:
           toolchain: ${{ inputs.toolchain }}
           components: ${{ inputs.components }}
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        with:
+          # Registry-only: cache the downloaded ~/.cargo crates, NOT compiled
+          # target/ artifacts. Removes the two real risks of build-artifact
+          # caching — a poisoned/stale compiled artifact entering a build, and
+          # secrets a tool may serialize into target/ leaking via a PR-readable
+          # cache (the 2026 Miri advisory). Trades some compile-cache speed for a
+          # near-zero threat surface.
+          cache-targets: "false"
+          # Only main writes cache entries; PRs (and other low-trust refs)
+          # restore-only. Closes the untrusted-write cache-poisoning vector.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: cargo clippy
         env:
           FLAGS: ${{ inputs.clippy-flags }}
@@ -125,6 +136,17 @@ jobs:
           toolchain: ${{ inputs.toolchain }}
           components: ${{ inputs.components }}
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        with:
+          # Registry-only: cache the downloaded ~/.cargo crates, NOT compiled
+          # target/ artifacts. Removes the two real risks of build-artifact
+          # caching — a poisoned/stale compiled artifact entering a build, and
+          # secrets a tool may serialize into target/ leaking via a PR-readable
+          # cache (the 2026 Miri advisory). Trades some compile-cache speed for a
+          # near-zero threat surface.
+          cache-targets: "false"
+          # Only main writes cache entries; PRs (and other low-trust refs)
+          # restore-only. Closes the untrusted-write cache-poisoning vector.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - if: ${{ !inputs.run-coverage }}
         name: cargo test
         env:
