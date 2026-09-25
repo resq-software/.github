@@ -43,6 +43,16 @@ on:
         type: string
         required: false
         default: "500"
+      runner:
+        description: >-
+          Label(s) the job runs on. Defaults to GitHub-hosted `ubuntu-latest`;
+          set to a self-hosted label to run on an org/repo self-hosted runner
+          instead -- useful when GitHub-hosted minutes are exhausted. Mirrors
+          security-scan.yml's `runner` input; existing callers are unaffected
+          until they pass it.
+        type: string
+        required: false
+        default: "ubuntu-latest"
 
 permissions:
   contents: read
@@ -50,7 +60,7 @@ permissions:
 jobs:
   repo-standards:
     name: repo-standards
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2
