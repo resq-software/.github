@@ -35,8 +35,8 @@ is no code owner to approve. The recommended rollout:
    - `resq-software/ardupilot` — open; add a small CODEOWNERS before
      activation, or exclude via `conditions.repository_name.exclude`
      in Ruleset A during the bake window.
-   - `resq-software/resq-proto` — fix is pending in
-     `resq-software/resq-proto#2`; merge that first.
+   - an internal proto repo — fix is pending in
+     an open internal PR; merge that first.
 3. **Confirm at least one consumer repo has merged a PR emitting the
    `required` status check** (created by the reusable `required.yml`
    workflow in this repo). If none do, the `required_status_checks`
@@ -126,7 +126,7 @@ gh api --method POST \
 ## 4. Ruleset B — critical-tier extras (`ops/ruleset-b-critical.json`)
 
 Targets repos where custom-property `tier=critical` (currently:
-`crates`, `npm`, `pypi`, `resQ`, `resq-proto`). Composes with
+`crates`, `npm`, `pypi`, two other private repos). Composes with
 Ruleset A.
 
 Rules:
