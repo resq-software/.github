@@ -60,7 +60,7 @@ The template auto-populates with:
 | [cli](https://github.com/resq-software/cli) | Rust CLI/TUI toolchain |
 | [ui](https://github.com/resq-software/ui) | React component library |
 | [programs](https://github.com/resq-software/programs) | Solana Anchor on-chain programs |
-| [landing](https://github.com/resq-software/landing) | Marketing site |
+| The org's marketing site | Kept in a private repository, so not linked here |
 | [docs](https://github.com/resq-software/docs) | Official documentation (Mintlify) |
 | [dev](https://github.com/resq-software/dev) | One-command developer onboarding |
 
