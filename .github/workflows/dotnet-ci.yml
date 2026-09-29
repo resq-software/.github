@@ -69,7 +69,7 @@ permissions:
 jobs:
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'true' && fromJSON('["self-hosted","linux","x64","zima"]') || 'ubuntu-latest' }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
       run:
@@ -105,7 +105,7 @@ jobs:
   format:
     if: ${{ inputs.run-format-check }}
     name: Format check
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'true' && fromJSON('["self-hosted","linux","x64","zima"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     defaults:
       run:
@@ -133,7 +133,7 @@ jobs:
     if: ${{ inputs.run-test }}
     name: Test
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'true' && fromJSON('["self-hosted","linux","x64","zima"]') || 'ubuntu-latest' }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
       run:
