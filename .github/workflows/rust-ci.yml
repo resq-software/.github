@@ -63,7 +63,7 @@ jobs:
   fmt:
     if: ${{ inputs.run-fmt }}
     name: Format
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'true' && fromJSON('["self-hosted","linux","x64","zima"]') || 'ubuntu-latest' }}
     timeout-minutes: 5
     defaults:
       run:
@@ -83,7 +83,7 @@ jobs:
   clippy:
     if: ${{ inputs.run-clippy }}
     name: Clippy
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'true' && fromJSON('["self-hosted","linux","x64","zima"]') || 'ubuntu-latest' }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
       run:
@@ -124,7 +124,7 @@ jobs:
   test:
     if: ${{ inputs.run-test }}
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'true' && fromJSON('["self-hosted","linux","x64","zima"]') || 'ubuntu-latest' }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
       run:
@@ -177,7 +177,7 @@ jobs:
   deny:
     if: ${{ inputs.run-deny }}
     name: cargo-deny
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'true' && fromJSON('["self-hosted","linux","x64","zima"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     defaults:
       run:
