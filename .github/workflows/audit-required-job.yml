@@ -193,10 +193,13 @@ jobs:
           # field, and the org sweep ran VERIFIED on it. It is not
           # established to be the minimal such set, so it is advised whole.
           #
-          # docs/standards/05-workflow-releases.md is canonical for the
-          # permission table and for the exact limits of that claim
-          # (including that it is NOT the `admin:org` scope, and that plain
-          # org membership was never isolated). Do not restate them here.
+          # docs/standards/05-workflow-releases.md holds the full permission
+          # table and the exact limits of that claim (including that it is NOT
+          # the `admin:org` scope, and that plain org membership was never
+          # isolated). It is the reference to update first. The remediation
+          # strings this job renders carry a short form of the same advice,
+          # because an operator reading a job summary does not have the doc in
+          # front of them — so they have to be kept in step with it by hand.
           #
           # What that uncertainty means operationally is the only thing this
           # code depends on, and it is established: the field is readable

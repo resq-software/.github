@@ -12,41 +12,31 @@ no tags, so there was nothing to bump to, and Dependabot did nothing. It did
 not warn; there was no error to see. Consumers sat on April and June pins
 while fixes landed here on `main`.
 
-The repos that already had the `github-actions` ecosystem enabled were
-waiting on a target that did not exist, and still are — but only for the pins
-that point *here*. Measured 2026-09-30 against a fully enumerated org:
-**16 of the 21 non-archived repositories** have the `github-actions`
-ecosystem enabled — 9 of the 11 public and 7 of the 10 non-public. The other
-five carry no Dependabot configuration at all.
+Most repos in the org have the `github-actions` ecosystem enabled, and they
+are still waiting on a target that does not exist — but only for the pins that
+point *here*.
 
-Be exact about what those 16 scans do, because an earlier revision of this
-section was not. **They are not idle.** They resolve targets and open PRs
-routinely: counting the public half alone, four `github-actions` Dependabot
-PRs stood open on 2026-09-30 and many more have already merged. What resolves
-to nothing is far narrower, and it is the actual failure — **a pin to a
-reusable workflow in this repo**. Dependabot moves such a pin to the SHA of a
-newer tag; this repo has none; so those pins alone are passed over while every
-third-party action in the very same file keeps getting bumped on schedule.
-Checked the same day across all 21 repositories and every PR state: **not one
-Dependabot PR has ever been opened against one of those pins** — against a
-positive control confirming the same query returns third-party bumps.
+Be exact about what those scans do, because an earlier revision of this section
+was not. **They are not idle.** They resolve targets and open `github-actions`
+Dependabot PRs routinely, and many have already merged. What resolves to
+nothing is far narrower, and it is the actual failure — **a pin to a reusable
+workflow in this repo**. Dependabot moves such a pin to the SHA of a newer tag;
+this repo has none; so those pins alone are passed over while third-party
+actions in the very same file keep getting bumped on schedule. Checked across
+every enumerated repository and every PR state: **no Dependabot PR has ever
+named one of those pins** — against a positive control confirming the same
+query does return third-party bumps.
 
 (This section has twice carried a wrong figure on `main`. It said "eight of
-eleven", then "eight" — both public-only views of an org that has twenty-one
-non-archived repositories, the same blind spot that made the drift check below
-report a clean bill of health it had not earned. The figure above is the first
-one counted rather than inferred: every repository enumerated, every
-Dependabot config read.
-
-A third figure, "15 of 20", was written while preparing this change and never
-reached `main`; it is recorded here only because its shape is the trap. Its
-denominator came from the org's *declared* counts, which read one lower than a
-full enumeration on the non-public side — see "When the counts disagree"
-below. Counting instead of inferring gives 16 of 21. The two differ by exactly
-one repository, and it is the same repository the declared counter leaves out,
-so the inferred figure landed close for a reason that had nothing to do with
-how it was derived. A denominator taken from a declared counter is not a
-count.)
+eleven", then "eight" — both public-only views of the org, the same blind spot
+that made the drift check below report a clean bill of health it had not
+earned. A third figure, "15 of 20", was written while preparing this change and
+never reached `main`; it is recorded only because its shape is the trap. Its
+denominator came from the org's *declared* counts, which read lower than a full
+enumeration on the non-public side — see "When the counts disagree" below, and
+note that the declared counter is not something to derive a denominator from.
+No replacement figure is given here: none of the above depends on one, and the
+sweep renders the current state on every run.)
 
 ## The contract
 
@@ -55,9 +45,8 @@ count.)
    for a new input or job, `PATCH` for a fix that changes no interface.
 
    This is an obligation, not a description. It is **not yet true**: this repo
-   has no tags and no releases, and 48 commits have landed on `main` since the
-   oldest pin still in use (that pin dates to 2026-04-17; the count is as of
-   2026-09-30 and only grows). `06-versioning.md` — "a repo that publishes
+   has no tags and no releases, and many commits have landed on `main` since
+   the oldest pin still in use. `06-versioning.md` — "a repo that publishes
    nothing still tags" — makes this a rule this repo is itself breaking, and
    it is why propagation is still manual. Clauses 2 and 3 cannot function
    until it is honoured.
@@ -71,24 +60,19 @@ count.)
    The SHA is what runs; the comment is what lets Dependabot find the next
    version.
 
-   Still true, and now measured across the whole org rather than its public
-   half. Re-counted 2026-09-30T14:50Z by running the sweep's own `pins.awk`
-   over every workflow file in all 21 repositories: **23 live pins — 17 public
-   and 6 non-public — every one of them a full 40-character SHA, and not one
-   carrying a version comment.** (The sweep's own run that day reported 22.
-   The one-pin difference is not explained here; it does not move the clause,
-   since the "without a version comment" figure is the whole population on
-   either count. Two further `@main` matches were excluded as documentation
-   examples in `.github/workflows/README.md` rather than live pins.)
+   Still true, and now checked across the whole org rather than its public
+   half: every live pin is a full 40-character SHA and **not one of them
+   carries a version comment**. `org-conformance-sweep.yml` counts them on
+   every run — read `Check 6 — pin drift` in its latest job summary for the
+   current figures rather than a number frozen into this document.
 
-   Read 23 as *pin occurrences across enumerated repositories*, not as a count
-   of distinct consumers. One of the six non-public pins sits in the
-   security-advisory temporary fork, where it is a copy of a pin its parent
-   already contributes, so that pin is counted twice. The same repository
-   reads one *low* in the declared counter — every figure derived by scanning
-   files is inflated by it, and every figure taken from `total_private_repos`
-   is deflated by it. Neither direction moves this clause, because the count
-   carrying a version comment is 0 across the whole population.
+   Read that count as *pin occurrences across enumerated repositories*, not as
+   a count of distinct consumers. A repository that carries a fork of another
+   repository's workflows contributes its copy of a pin a second time, so
+   file-derived figures run high while figures taken from the org's declared
+   counters run low — see "When the counts disagree" below. Neither direction
+   moves this clause, because no pin anywhere in the population carries a
+   version comment.
 
    While clause 1 is unmet there is no version for a comment to name, so the
    stated rationale is inoperative.
@@ -102,18 +86,19 @@ count.)
 
    **As written, this clause does not describe what currently happens here.**
    It is not weakened to make it true: it is the standard, and the standard is
-   unmet. The ecosystem is enabled in 16 of the 21 repositories and it is
+   unmet. The ecosystem is enabled in most repositories in the org and it is
    working — for third-party actions. It is *this* repo that supplies no
    target: zero tags and zero releases, so every pin at
    `resq-software/.github` is skipped and no PR is ever opened for it, while
-   the surrounding actions in the same file are bumped as normal. Dependabot
-   raises no error for this. The symptom is not a red run and not an absent
-   PR — it is a grouped PR that arrives on time and quietly covers everything
-   except us, which is why the gap survived five months and why enabling the
-   ecosystem in the remaining five repositories would not have surfaced it.
-   Nothing on the consumer side closes it. Honouring clause 1 does, and only
-   clause 1 does: the first tag and release cut here gives clauses 2 and 3
-   something to name and something to bump to on the same day.
+   third-party actions in the same file are bumped as normal. Dependabot
+   raises no error for this. What was observed is that **no Dependabot PR, in
+   any state, has ever named one of those pins**, while the same query returns
+   third-party bumps — so the symptom is not a red run and not an absent PR,
+   and enabling the ecosystem in the remaining repositories would not by
+   itself surface it. Nothing on the consumer side closes it. Honouring
+   clause 1 does, and only clause 1 does: the first tag and release cut here
+   gives clauses 2 and 3 something to name and something to bump to on the
+   same day.
 
    Note what that does *not* promise. The scan is weekly and this repo's
    own config groups all Actions updates, so several releases inside one
@@ -176,18 +161,19 @@ what it claims. It establishes that **the enumeration is not short of what the
 org declares** — `public_repos` on the public side, `total_private_repos` on
 the non-public side. That is a floor, not an identity.
 
-The difference is live rather than theoretical, because the two numbers are
-measured to disagree here. At 2026-09-30T14:32Z this org declared
-`public_repos=11` and `total_private_repos=9`, while a full `type=all`
-enumeration returned 21 repositories — 11 public and 10 non-public. Exactly
-one of the enumerated non-public repositories carries the name shape of a
-GitHub security-advisory temporary fork, and such forks are enumerable and are
-scanned by the sweep.
+The difference is live rather than theoretical: measured against this org,
+`total_private_repos` reads lower than a full `type=all` enumeration of the
+non-public side, and at least one enumerated non-public repository carries the
+name shape of a GitHub security-advisory temporary fork. Such forks are
+enumerable and are scanned by the sweep. The current figures are whatever the
+latest run of `org-conformance-sweep.yml` renders; they are not copied into
+this document, because they move and because the size of that candidate is
+non-public in its own right.
 
 The leading explanation is that `total_private_repos` does not count them. It
-is *not* asserted here as an established mechanism: it rests on an excess of
-one against exactly one candidate, in one organisation, at one moment, and
-counting cannot show which repository a counter left out. GitHub documents
+is *not* asserted here as an established mechanism: it rests on an agreement
+in magnitude, in one organisation, at one moment, and counting cannot show
+which repository a counter left out. GitHub documents
 neither `total_private_repos` nor `owned_private_repos` beyond their type, so
 there is no authoritative statement either way (checked 2026-09-30). What is
 established is only the part the sweep depends on: **the declared count and

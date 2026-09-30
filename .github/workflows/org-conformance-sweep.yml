@@ -48,8 +48,10 @@
 # available.
 #
 # The full table and the precise limits of the claim live in
-# docs/standards/05-workflow-releases.md — canonical; do not restate them
-# here.
+# docs/standards/05-workflow-releases.md, which is the reference to update
+# first. The remediation strings this workflow renders carry a short form of
+# the same advice, because an operator reading a job summary does not have the
+# doc in front of them — so they have to be kept in step with it by hand.
 #
 # What the code depends on is established either way: the field is readable
 # under some tokens and absent under others, so without it the non-public side
