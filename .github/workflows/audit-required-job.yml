@@ -103,6 +103,54 @@ jobs:
             printf '%s\n' "$repo_rows" | awk -F'\t' -v r="$1" '$1==r && $2=="public"{f=1} END{exit !f}'
           }
 
+          # ---- COVERAGE -----------------------------------------------------
+          # The two-tier split removed the old
+          #   "## Repos unreachable by the audit runner (likely private; set
+          #    SYNC_TOKEN for full coverage)"
+          # heading, which was this workflow's ONLY partial-coverage hint. With
+          # it gone, a public-only token simply enumerates nothing non-public,
+          # every counter reads 0, and the PUBLIC issue renders as a clean
+          # audit of an org it never finished reading — the exact false-clean
+          # pattern this change exists to kill, reintroduced one layer down.
+          #
+          # So coverage is measured explicitly here and stated explicitly in
+          # the issue body, as counts with no names.
+          #
+          # `public_repos` is a public field on the org object. Archived repos
+          # are excluded from the audit but INCLUDED in that count, so the
+          # comparison is made against the unfiltered enumeration.
+          # `total_private_repos` is an organization-ADMINISTRATION field, not
+          # a membership field: a correctly scoped read-only token does not see
+          # it, so its absence is reported as UNVERIFIED rather than treated as
+          # a failure or, worse, as a pass.
+          all_rows=$(gh api --paginate "/orgs/$ORG/repos?type=all&per_page=100" \
+            --jq '.[] | (if .private then "private" else "public" end)')
+          enum_pub=$(printf  '%s\n' "$all_rows" | grep -cx public  || true)
+          enum_priv=$(printf '%s\n' "$all_rows" | grep -cx private || true)
+          dec_pub=$(gh api "/orgs/$ORG"  --jq '.public_repos        // "null"' 2>/dev/null || echo null)
+          dec_priv=$(gh api "/orgs/$ORG" --jq '.total_private_repos // "null"' 2>/dev/null || echo null)
+
+          cov_unreadable=0
+          cov_state=complete
+          if [ "$dec_pub" != null ] && [ "$enum_pub" -lt "$dec_pub" ]; then
+            cov_unreadable=$(( cov_unreadable + dec_pub - enum_pub ))
+            cov_state=PARTIAL
+          fi
+          if [ "$dec_priv" != null ]; then
+            if [ "$enum_priv" -lt "$dec_priv" ]; then
+              cov_unreadable=$(( cov_unreadable + dec_priv - enum_priv ))
+              cov_state=PARTIAL
+            fi
+          elif [ "$enum_priv" -eq 0 ]; then
+            # Nothing non-public enumerated AND no declared count to check it
+            # against: this is the public-only-token case. Treat it as partial,
+            # because it is, and say so rather than publishing a clean table.
+            cov_state=PARTIAL
+          else
+            cov_state=UNVERIFIED
+          fi
+          echo "coverage: state=$cov_state enumerated=$enum_pub public + $enum_priv non-public; declared=$dec_pub + $dec_priv; unreadable=$cov_unreadable (names withheld — this log is public)"
+
           # Ruleset endpoint requires admin:org scope. If the available
           # token (GITHUB_TOKEN by default) can't read it, degrade
           # gracefully: treat the exclude list as empty. Informational;
@@ -149,6 +197,10 @@ jobs:
 
             default=$(gh api "/repos/$ORG/$repo" --jq '.default_branch' 2>/dev/null || echo "")
             if [ -z "$default" ]; then
+              # Enumerated but not readable. Either way this is partial
+              # coverage, whichever tier it falls in.
+              cov_unreadable=$((cov_unreadable + 1))
+              cov_state=PARTIAL
               if [ "$vis" = public ]; then
                 unreachable_list="${unreachable_list}- $repo"$'\n'
               else
@@ -217,6 +269,9 @@ jobs:
             echo "np_unreachable=$np_unreachable"
             echo "np_exempt=$np_exempt"
             echo "np_ok=$np_ok"
+            echo "cov_state=$cov_state"
+            echo "cov_unreadable=$cov_unreadable"
+            echo "cov_enum=$((enum_pub + enum_priv))"
             echo "gap_list<<GAPEOF"
             printf '%s' "${gap_list:-*(none)*
           }"
@@ -241,6 +296,9 @@ jobs:
           NP_GAP: ${{ steps.scan.outputs.np_gap }}
           NP_UNREACHABLE: ${{ steps.scan.outputs.np_unreachable }}
           NP_EXEMPT: ${{ steps.scan.outputs.np_exempt }}
+          COV_STATE: ${{ steps.scan.outputs.cov_state }}
+          COV_UNREADABLE: ${{ steps.scan.outputs.cov_unreadable }}
+          COV_ENUM: ${{ steps.scan.outputs.cov_enum }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           TITLE: 'chore(governance): required-job audit — repos missing `required` status-check gate'
         shell: bash
@@ -250,8 +308,34 @@ jobs:
           # This issue is created on a PUBLIC repository. Only the tier-1
           # (public-repo) lists are interpolated; non-public repositories
           # appear as counts, which is all the scan step recorded for them.
+          #
+          # The coverage block is NOT optional decoration. It replaces the
+          # "(likely private; set SYNC_TOKEN for full coverage)" heading that
+          # the two-tier split removed, and it is the only thing standing
+          # between a partial audit and an issue that reads clean. Counts
+          # only — no names, no branch names.
+          case "$COV_STATE" in
+            complete)
+              coverage="Coverage: **complete**. All ${COV_ENUM} non-archived repositories in the org were enumerated and read."
+              ;;
+            UNVERIFIED)
+              coverage="> [!NOTE]
+          > **Coverage of non-public repositories is UNVERIFIED.** ${COV_ENUM} non-archived repositories were enumerated and read, but \`total_private_repos\` — an organization-administration field, not a membership field — is not readable by this token, so the audit cannot prove it saw every non-public repository. Add **Organization administration: Read** to the token for a verified count. Names are withheld: this issue is public."
+              ;;
+            *)
+              coverage="> [!WARNING]
+          > **Coverage was INCOMPLETE — do not read this issue as a clean bill of health.**
+          >
+          > **${COV_UNREADABLE}** of the org's repositories could not be read by the audit runner, so they were **not audited at all** and appear in no list and no count below. Names are withheld: this issue is public.
+          >
+          > Grant a token that can read the whole org — the existing org secret \`SYNC_TOKEN\` granted to this repository, or an org-wide \`ORG_READ_TOKEN\` (fine-grained: Metadata + Contents read) — and re-run. Until then this audit is partial by construction."
+              ;;
+          esac
+
           body=$(cat <<BODYEOF
           The weekly \`required\`-job audit detected repos without a CI job emitting the \`required\` status-check context.
+
+          ${coverage}
 
           These repos are governed by org ruleset \`default-branch-baseline\` (id 15191038) which requires that context. Until a \`required\` job is added, PRs will hang in "Expected — Waiting for status to be reported" and be blocked from merge.
 
@@ -263,7 +347,9 @@ jobs:
 
           ${EXEMPT_LIST}
 
-          ## Public repos unreachable by the audit runner
+          ## Public repos enumerated but unreachable by the audit runner
+
+          Listed here only if the enumeration saw them and the subsequent read failed. A repository the token cannot enumerate at all never reaches this list — that shortfall is in the coverage note above.
 
           ${UNREACHABLE_LIST}
 

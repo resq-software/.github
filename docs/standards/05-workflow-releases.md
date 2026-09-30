@@ -92,5 +92,29 @@ org-wide `ORG_READ_TOKEN`, fine-grained with Metadata, Contents and Actions
 read. Until one is available the weekly run is red on purpose. A clean report
 from it now means clean, not silent.
 
+Completeness is asserted in one of two modes, and the summary says which one
+ran. The org's `public_repos` field is public, so the public side is always
+checked strictly against it. The non-public side depends on
+`total_private_repos`, which is an **organization-administration** field — it
+sits in the owner-only block of the org object alongside `plan` and
+`disk_usage`, and it is *not* a membership field. The read-only token above
+therefore does not see it, and that alone is not a failure: the sweep reports
+the non-public side as **UNVERIFIED**, corroborates the enumeration against an
+independent GraphQL listing, and refuses to continue if it enumerated no
+non-public repositories at all — which is exactly the 2026-09-28
+public-only-token configuration. Adding **Organization administration: Read**
+to the token upgrades that side to **VERIFIED** and restores the strict
+shortfall arithmetic. A partial non-public *grant* is only detectable in
+VERIFIED mode; that limitation is printed in the summary rather than papered
+over.
+
+Run health is scored against each workflow's own `on:` block, not a fixed
+wall-clock window: the window is two missed fires of the workflow's shortest
+cron interval, floored at 14 days, so a weekly cron lands on exactly 14 days
+and a monthly cron gets 60. A workflow with no schedule is **not** judged on
+elapsed days at all — there is no cadence to be late against — and a workflow
+that has never run is only a finding when it is scheduled and already older
+than its own window.
+
 What it still does not check: whether a pinned workflow is *behind a release*
 (there are none), and whether the drift it finds ever gets fixed.
