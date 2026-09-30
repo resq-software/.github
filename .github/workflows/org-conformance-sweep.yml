@@ -1400,7 +1400,7 @@ jobs:
             echo "| severity | meaning | counted as a finding |"
             echo "| --- | --- | --- |"
             echo "| \`STALE\` | scheduled, and no green run within its derived window — **overdue by cadence** | yes |"
-            echo "| \`FAILING\` | its **last run did not succeed**, and it is not already overdue. Asked of every workflow, **scheduled or not** | yes |"
+            echo "| \`FAILING\` | its **last run concluded in failure** (\`failure\`, \`timed_out\`, \`startup_failure\`), and it is not already overdue. Asked of every workflow, **scheduled or not** | yes |"
             echo "| \`NEVER-GREEN\` | has run, has never once succeeded | yes |"
             echo "| \`NEVER-RUN\` | scheduled, its own record older than its window, never fired | yes |"
             echo "| \`ORPHAN\` | Actions lists it active, the file is absent from the default branch | yes |"
@@ -1409,7 +1409,7 @@ jobs:
             echo
             echo "\`STALE\` and \`FAILING\` answer **two independent questions**, and only the first is cadence-dependent: *is it overdue against its own schedule*, and *did its last run fail*. Cadence governs only whether elapsed time counts against a workflow — it never makes a red run acceptable. An earlier revision collapsed the two, so a \`workflow_dispatch\`-only workflow with a failing last run rendered a clean \`ON-DEMAND\` row. A workflow that is overdue **and** red is listed once, as \`STALE\`; the cadence-independent count below still sees it."
             echo
-            echo "**$health_last_run_failed** active lock workflows across all repositories have a **non-green last run**, counted independently of the severity fold above and of cadence. That count carries no repository name, so it spans both visibility tiers."
+            echo "**$health_last_run_failed** active lock workflows across all repositories have a **last run that concluded in failure** (\`failure\`, \`timed_out\`, \`startup_failure\`), counted independently of the severity fold above and of cadence. That count carries no repository name, so it spans both visibility tiers. It is deliberately **narrower than \"not green\"**: a \`cancelled\`, \`skipped\`, \`neutral\` or \`action_required\` conclusion, and a run still queued or in progress, are not evidence that a workflow is broken and are excluded here. The by-agent table further down uses the broader \`!= success\` basis on purpose — the two numbers answer different questions and need not agree."
             echo
             echo "| sev | repo | workflow | last run | last green | window | agent |"
             echo "| --- | --- | --- | --- | --- | --- | --- |"
@@ -1420,7 +1420,7 @@ jobs:
             echo "| bucket | findings |"
             echo "| --- | --- |"
             echo "| stale (scheduled, no green run inside its derived window) | ${np_stale:-0} |"
-            echo "| failing (last run not green, not already overdue; any cadence) | ${np_failing:-0} |"
+            echo "| failing (last run concluded in failure, not already overdue; any cadence) | ${np_failing:-0} |"
             echo "| never green (has run, has never once succeeded) | ${np_never_green:-0} |"
             echo "| never run (scheduled, past its window, never fired) | ${np_never_run:-0} |"
             echo "| orphaned record (listed active, file absent) | ${np_orphan:-0} |"
@@ -1450,7 +1450,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           echo "sweep: $affected/$enum_pub public with findings, $unreadable unreadable; $np_affected non-public with findings"
-          echo "sweep: pins=$pin_total no-version=$pin_nover drifting=$pin_bad; run-health findings=$health_bad (non-green last run, counted independently of cadence: $health_last_run_failed); non-public coverage=$priv_mode second-listing=$corr_priv"
+          echo "sweep: pins=$pin_total no-version=$pin_nover drifting=$pin_bad; run-health findings=$health_bad (last run concluded failure/timed_out/startup_failure, counted independently of cadence: $health_last_run_failed); non-public coverage=$priv_mode second-listing=$corr_priv"
 
           # GATE. Deliberately narrow for this cycle.
           #
