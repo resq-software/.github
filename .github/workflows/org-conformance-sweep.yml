@@ -1422,7 +1422,7 @@ jobs:
           # "no findings" and "the repository is unreadable". `unassessed`
           # counts check/repository PAIRS; `unassessed_repos` counts distinct
           # repositories, raised once per repository by the loop below.
-          unassessed=0 unassessed_repos=0 np_unassessed=0
+          unassessed=0 unassessed_repos=0 np_unassessed=0 pub_unassessed_repos=0
           unassessed_rows="" unassessed_kinds="" repo_unassessed=0
           total=0 affected=0 unreadable=0 np_affected=0 np_unreadable=0
           conf_rows="" conf_kinds=""
@@ -1622,16 +1622,46 @@ jobs:
               # of trying both, and an absent config IS the finding. A read
               # that FAILED is different: it would publish "uses zima without
               # actionlint declaring it" about a file nobody could read.
-              al=""; al_unreadable=no
+              #
+              # FIRST FAILURE WINS, as in the caller-file loop above. The
+              # reason used to be read from `gh_why`/`gh_detail` AFTER the
+              # loop, which reports the LAST call's status rather than the one
+              # that actually denied an answer. Reproduced with
+              # `actionlint.yaml` served 403 and `actionlint.yml` 404: the
+              # outcome was right (NOT ASSESSED) but the published reason read
+              # `HTTP 404: gh: Not Found`, concealing the 403 that caused it
+              # and inviting the reader to conclude the file is merely absent.
+              # The status is captured at the moment of the failure instead.
+              #
+              # THE EMPTY DECODE IS THE THIRD OUTCOME HERE TOO. `fetch` ends in
+              # `base64 -d 2>/dev/null || true`, so a read that SUCCEEDED but
+              # decoded to nothing returns rc 0 with an empty body — an empty
+              # file, or an entry with no `.content` at all (a submodule or a
+              # symlink). That left `al=""` with `al_unusable=no`, so control
+              # fell to the `elif` and the sweep published "uses `zima`
+              # without actionlint declaring it" with `not-assessed=0`.
+              # Reproduced with both filenames served as 200s decoding to
+              # nothing. This one OVER-reports rather than under-reports, and
+              # for a genuinely empty `actionlint.yaml` the finding is in fact
+              # true — but the sweep cannot tell that case from the submodule
+              # one, and every other read in this file now treats "succeeded
+              # but said nothing" as an answer it did not get.
+              al=""; al_unusable=no; al_why=""; al_detail=""
               for alf in .github/actionlint.yaml .github/actionlint.yml; do
                 if al_out=$(fetch "$r" "$alf"); then
                   if [ -n "$al_out" ]; then al="$al_out"; break; fi
+                  al_unusable=yes
+                  [ -n "$al_why" ] || al_why="read succeeded, body decoded empty"
                 elif [ "$?" -eq 2 ]; then
-                  al_unreadable=yes
+                  al_unusable=yes
+                  if [ -z "$al_why" ]; then
+                    al_why="$(gh_why)"
+                    al_detail="$(gh_detail)"
+                  fi
                 fi
               done
-              if [ -z "$al" ] && [ "$al_unreadable" = yes ]; then
-                note_unassessed "$r" "$vis" "check 4 (zima declared to actionlint)" "$(gh_why)" "$(gh_detail)"
+              if [ -z "$al" ] && [ "$al_unusable" = yes ]; then
+                note_unassessed "$r" "$vis" "check 4 (zima declared to actionlint)" "$al_why" "$al_detail"
               elif ! printf '%s' "$al" | grep -qE '^[[:space:]]*-[[:space:]]*zima[[:space:]]*$'; then
                 findings="${findings}uses \`zima\` without actionlint declaring it; "
                 kinds="${kinds}zima-undeclared"$'\n'
@@ -1697,6 +1727,11 @@ jobs:
 
             if [ "$repo_unassessed" = 1 ]; then
               unassessed_repos=$((unassessed_repos + 1))
+              # A COUNT OF PUBLIC REPOSITORIES, WHICH CARRIES NO NAME. Used by
+              # the checks-1-5 table to keep its empty-table row from claiming
+              # a clean bill of health for repositories some of whose checks
+              # never ran.
+              [ "$vis" = public ] && pub_unassessed_repos=$((pub_unassessed_repos + 1))
             fi
 
             if [ -n "$findings" ]; then
@@ -1786,7 +1821,25 @@ jobs:
             echo
             echo "| repo | finding |"
             echo "| --- | --- |"
-            if [ -n "$conf_rows" ]; then printf '%s' "$conf_rows"; else echo "| _none_ | all $enum_pub public repos clean |"; fi
+            # THE EMPTY-TABLE ROW MUST NOT OVER-CLAIM. It rendered "all N
+            # public repos clean" even when a repository's checks 1-4 and 6
+            # never ran. That was never silent — the blockquote above says the
+            # pair could not be assessed, and the not-assessed table lists it —
+            # but the row's own words are quotable out of context, and "all N
+            # clean" is the one sentence this whole file exists to stop being
+            # published when it is not true. An UNREADABLE public repository
+            # cannot reach this branch: it writes its own `conf_rows` entry, so
+            # `conf_rows` is non-empty whenever one exists. Repositories with an
+            # unassessed check do not, so they are subtracted here by name-free
+            # count. When nothing was missed the original wording stands, because
+            # then it is exactly true.
+            if [ -n "$conf_rows" ]; then
+              printf '%s' "$conf_rows"
+            elif [ "$pub_unassessed_repos" -eq 0 ]; then
+              echo "| _none_ | all $enum_pub public repos clean |"
+            else
+              echo "| _none_ | all $((enum_pub - pub_unassessed_repos)) **fully assessed** public repos clean — the other $pub_unassessed_repos of $enum_pub had at least one check that did not run, and are **neither** clean nor a finding; see *Checks that could not be run* |"
+            fi
             echo
             echo "### Conformance checks 1-5 — non-public repositories (aggregate; detail withheld, this log is public)"
             echo

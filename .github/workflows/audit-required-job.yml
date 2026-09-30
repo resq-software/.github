@@ -293,6 +293,22 @@ jobs:
           #                  the token may list but not read.
           cov_shortfall=0
           cov_readfail=0
+          # WHICH SIDE OF THE ARITHMETIC WENT UNVERIFIED. `dec_pub` and
+          # `dec_priv` come from TWO SEPARATE HTTP requests, so a rate limit
+          # or a 5xx can take out one and leave the other working. The issue
+          # step used to render a single hardcoded UNVERIFIED sentence naming
+          # `total_private_repos` and recommending "Organization
+          # administration: Read". Reproduced with `.public_repos` failing and
+          # `total_private_repos` reading fine: the PUBLIC issue said
+          # `total_private_repos` was unreadable and recommended that scope —
+          # both false in that state, and it never said that the PUBLIC side
+          # of the arithmetic is what failed, so it pointed the reader at the
+          # wrong fix. Not a false clean: the state was still UNVERIFIED and
+          # completeness was still refused. A wrong diagnosis, which is its
+          # own defect. The two sides are recorded separately and the rendered
+          # sentence is selected from them.
+          cov_pub_unverified=0
+          cov_priv_unverified=0
           # Set when the shortfall is known to exist but is NOT MEASURABLE, so
           # that `shortfall=0` is never published next to state=PARTIAL. See
           # the public-only-token branch below.
@@ -306,6 +322,7 @@ jobs:
             # side's evidence, which is the same false-clean shape as every
             # other defect this file has been through. Raise the state.
             echo "::warning::/orgs/$ORG did not return .public_repos, so the PUBLIC side of the coverage arithmetic did not run on this audit. Coverage cannot be reported complete."
+            cov_pub_unverified=1
             cov_raise UNVERIFIED
           elif [ "$enum_pub" -lt "$dec_pub" ]; then
             cov_shortfall=$(( cov_shortfall + dec_pub - enum_pub ))
@@ -333,6 +350,11 @@ jobs:
             cov_raise PARTIAL
             cov_unreadable_unknown=1
           else
+            # `total_private_repos` unreadable WITH a non-empty non-public
+            # enumeration: the non-public side cannot be checked against a
+            # declared count. This is the only state in which the sentence
+            # naming that field is true.
+            cov_priv_unverified=1
             cov_raise UNVERIFIED
           fi
           echo "coverage (preliminary, before the per-repo reads below): state=$cov_state enumerated=$enum_pub public + $enum_priv non-public; declared=$dec_pub + $dec_priv; never-enumerated=$cov_shortfall enumerated-but-unreadable=$cov_readfail unknown-shortfall=$cov_unreadable_unknown (names withheld — this log is public)"
@@ -578,6 +600,8 @@ jobs:
             echo "cov_state=$cov_state"
             echo "cov_shortfall=$cov_shortfall"
             echo "cov_readfail=$cov_readfail"
+            echo "cov_pub_unverified=$cov_pub_unverified"
+            echo "cov_priv_unverified=$cov_priv_unverified"
             echo "unassessed=$unassessed"
             echo "np_unassessed=$np_unassessed"
             echo "cov_unreadable_unknown=$cov_unreadable_unknown"
@@ -623,6 +647,8 @@ jobs:
           COV_STATE: ${{ steps.scan.outputs.cov_state }}
           COV_SHORTFALL: ${{ steps.scan.outputs.cov_shortfall }}
           COV_READFAIL: ${{ steps.scan.outputs.cov_readfail }}
+          COV_PUB_UNVERIFIED: ${{ steps.scan.outputs.cov_pub_unverified }}
+          COV_PRIV_UNVERIFIED: ${{ steps.scan.outputs.cov_priv_unverified }}
           UNASSESSED: ${{ steps.scan.outputs.unassessed }}
           NP_UNASSESSED: ${{ steps.scan.outputs.np_unassessed }}
           UNASSESSED_LIST: ${{ steps.scan.outputs.unassessed_list }}
@@ -725,8 +751,42 @@ jobs:
               coverage="Coverage: **complete**. All **${COV_ENUM}** repositories the org declares were enumerated — that count is deliberately **unfiltered by archive status**, because \`public_repos\` on the org object includes archived repositories and the completeness arithmetic has to compare like with like — and the **${COV_SCANNED}** **non-archived** ones among them, which are the audit's actual scope, were each read."
               ;;
             UNVERIFIED)
+              # WHICH SIDE FAILED DECIDES WHAT THIS SAYS. `public_repos` and
+              # `total_private_repos` are read in two separate requests, so
+              # exactly one of them can fail. A single hardcoded sentence
+              # named `total_private_repos` and recommended "Organization
+              # administration: Read" in BOTH cases, which is a wrong
+              # diagnosis whenever it was the public side that failed — and a
+              # wrong diagnosis sends the reader to change a token scope that
+              # was never the problem. The scope advice is attached to the
+              # non-public sentence alone, because it is the only one it
+              # applies to: `public_repos` is a PUBLIC field that any working
+              # token can read, so its absence is a failed request — a rate
+              # limit or a 5xx — and a re-run is the remedy, not a scope.
+              unv_head=""
+              unv_why=""
+              if [ "${COV_PRIV_UNVERIFIED:-0}" = 1 ]; then
+                unv_head="Coverage of non-public repositories is UNVERIFIED"
+                unv_why="\`total_private_repos\` is not readable by this token, so the audit cannot prove it saw every non-public repository. That field sits in the owner-only block of the org object; what exactly gates it is **not established here** — measured against this org, it was absent for every non-member token tried and present for both org-owner tokens tried, including one without \`admin:org\` scope, so it is not the \`admin:org\` scope that exposes it. Adding **Organization administration: Read** to a fine-grained token is the suggested remedy but was **not tested**."
+              fi
+              if [ "${COV_PUB_UNVERIFIED:-0}" = 1 ]; then
+                pub_why="the read of \`public_repos\` on the org object FAILED, so the **public** side of the coverage arithmetic never ran and the audit cannot prove it enumerated every public repository. \`public_repos\` is a public field that any working token can read, so this is **not** a token-scope gap: it is a failed request — a rate limit, a 5xx, or a transport error — and a re-run is the remedy. Do not change token permissions on account of this sentence."
+                if [ -n "$unv_head" ]; then
+                  unv_head="Coverage is UNVERIFIED on BOTH sides"
+                  unv_why="${pub_why} Separately, ${unv_why}"
+                else
+                  unv_head="Coverage of public repositories is UNVERIFIED"
+                  unv_why="$pub_why"
+                fi
+              fi
+              # Neither flag set: the state was raised by something neither
+              # flag describes. Say that, rather than inventing a cause.
+              if [ -z "$unv_head" ]; then
+                unv_head="Coverage is UNVERIFIED"
+                unv_why="neither declared-count read was recorded as the cause, so the reason is not attributable from inside this run — see the \`coverage (FINAL)\` line in the run log."
+              fi
               coverage="> [!NOTE]
-          > **Coverage of non-public repositories is UNVERIFIED.** ${COV_ENUM} repositories were enumerated (a count that deliberately **includes archived** ones, to match \`public_repos\`) and the ${COV_SCANNED} **non-archived** ones among them — the audit's actual scope — were each read, but \`total_private_repos\` is not readable by this token, so the audit cannot prove it saw every non-public repository. That field sits in the owner-only block of the org object; what exactly gates it is **not established here** — measured against this org, it was absent for every non-member token tried and present for both org-owner tokens tried, including one without \`admin:org\` scope, so it is not the \`admin:org\` scope that exposes it. Adding **Organization administration: Read** to a fine-grained token is the suggested remedy but was **not tested**. Names are withheld: this issue is public."
+          > **${unv_head}.** ${COV_ENUM} repositories were enumerated (a count that deliberately **includes archived** ones, to match \`public_repos\`) and the ${COV_SCANNED} **non-archived** ones among them — the audit's actual scope — were each read, but ${unv_why} Names are withheld: this issue is public."
               ;;
             *)
               coverage="> [!WARNING]
