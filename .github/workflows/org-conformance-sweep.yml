@@ -18,7 +18,8 @@
 # Provide ONE of:
 #   * the existing org secret `SYNC_TOKEN`, granted to this repository, or
 #   * a new org-wide secret `ORG_READ_TOKEN`,
-# either way fine-grained with Metadata: Read + Contents: Read + Actions: Read.
+# either way fine-grained with Metadata: Read + Contents: Read + Actions: Read,
+# scoped to ALL repositories in the org (a subset silently under-enumerates).
 # `Actions: Read` is required by the run-health check (check 7) and is NOT
 # covered by the Contents-only scope this comment asked for previously.
 #
@@ -27,18 +28,28 @@
 # declared non-public repository count. It lives in the owner-only block of
 # the org object, next to `plan` and `disk_usage`.
 #
-# WHAT GATES IT IS NOT ESTABLISHED, and an earlier revision of this comment
-# asserted more than anyone had checked. It claimed the field is
-# "organization-ADMINISTRATION, not a membership field"; nobody verified that,
-# and the one measurement available contradicts the scope half of it. Measured
-# against this org on 2026-09-29: ABSENT under every token tried that is not
-# an org member, PRESENT under both tried that belong to an org owner —
-# including one carrying only `repo`+`read:org` and NOT `admin:org`. So it is
-# not the `admin:org` scope that exposes it; whether the discriminator is
-# plain membership or owner-level privilege could not be separated, because no
-# non-owner-member token and no fine-grained token were available to test.
-# Adding "Organization administration: Read" to a fine-grained token is the
-# suggested remedy below; that mapping is UNTESTED here.
+# MEASURED 2026-09-30: a fine-grained PAT with repository Actions + Contents +
+# Metadata: Read across ALL repositories, PLUS organization
+# `Administration: Read`, DOES expose the field — that run reported
+# `non-public coverage=VERIFIED second-listing=corroborated`. Earlier revisions
+# of this comment first asserted a gate nobody had checked and then recorded
+# the fine-grained advice as UNTESTED; the second was true when written and is
+# not any more.
+#
+# That result is narrower than it looks, so grant the whole set and do not
+# trim it: the permissions were granted together, none was dropped and
+# re-tested, and no token was tried with `Administration: Read` absent and the
+# rest present. So the set is NOT established to be minimal, and
+# `Administration: Read` is NOT established to be the permission doing the
+# work. Separately measured 2026-09-29, and still true: it is not the
+# `admin:org` scope either — a classic `repo`+`read:org` token belonging to an
+# org OWNER sees the field, and a non-member does not. Whether plain org
+# membership suffices is still untested; no non-owner member token has been
+# available.
+#
+# The full table and the precise limits of the claim live in
+# docs/standards/05-workflow-releases.md — canonical; do not restate them
+# here.
 #
 # What the code depends on is established either way: the field is readable
 # under some tokens and absent under others, so without it the non-public side
@@ -48,11 +59,15 @@
 # states which mode ran, and whether the second listing actually corroborated
 # anything or was unavailable.
 #
-# Until such a token is available this job FAILS LOUDLY: the completeness
-# assertion below refuses to report a sweep that covered part of the org, and
-# a red weekly job is the intended outcome. Silence must never be mistaken for
-# conformance — a false "all clean" is the exact failure this sweep exists to
-# prevent, and it is what it actually reported on 2026-09-28.
+# Without such a token this job FAILS LOUDLY: the completeness assertion below
+# refuses to report a sweep that covered part of the org, and a red weekly job
+# is the intended outcome. Silence must never be mistaken for conformance — a
+# false "all clean" is the exact failure this sweep exists to prevent, and it
+# is what it actually reported on 2026-09-28.
+#
+# A token that clears the bar is now configured: the 2026-09-30 run completed
+# green in VERIFIED mode. The paragraph above is kept because it is the
+# behaviour on token loss or expiry, not a historical note.
 #
 # DISCLOSURE: this repository is PUBLIC, so the job summary, every annotation
 # and every line of step log is world-readable. The report is therefore
@@ -566,19 +581,13 @@ jobs:
           #     the public side is asserted strictly against it.
           #   * `/orgs/{org}` `.total_private_repos` — returned next to
           #     `.plan`, `.owned_private_repos` and `.disk_usage` in the
-          #     owner-only block of the org object. WHAT GATES IT WAS NOT
-          #     ESTABLISHED; see the header. Measured 2026-09-29: absent under
-          #     every non-member token tried, present under both org-owner
-          #     tokens tried, one of which lacks `admin:org` — so it is not
-          #     the `admin:org` scope. Two earlier readings of this field were
-          #     both wrong, in opposite directions: inferring "this token is
-          #     not an org member" from its absence failed the very
-          #     configuration the remediation text told the operator to
-          #     create, and then asserting "administration, not membership"
-          #     replaced one unverified claim with another. The code below
-          #     depends only on the part that IS established: it is readable
-          #     under some tokens and not others, so its absence means the
-          #     non-public shortfall is not measurable on this run.
+          #     owner-only block of the org object. Readable by the
+          #     fine-grained permission set named in the header (measured
+          #     2026-09-30); absent under a non-member token. See the header
+          #     for what that does and does not establish. The code below
+          #     depends only on the part that has been true throughout: it is
+          #     readable under some tokens and not others, so its absence
+          #     means the non-public shortfall is not measurable on that run.
           #   * every count of non-public repositories that a non-admin token
           #     CAN read (`/orgs/{org}/repos`, the search API's
           #     `total_count`, GraphQL `repositories(privacy: PRIVATE)
@@ -591,8 +600,11 @@ jobs:
           # it ran in rather than claiming a completeness it cannot prove:
           #
           #   VERIFIED   `.total_private_repos` readable -> strict arithmetic
-          #              on both sides, as before. Requires organization
-          #              administration: read on top of the read-only scopes.
+          #              on both sides, as before. Reached by the permission
+          #              set in the header (repository Actions + Contents +
+          #              Metadata: Read, plus organization
+          #              `Administration: Read`), measured 2026-09-30. Not
+          #              established to be the minimal such set.
           #   UNVERIFIED `.total_private_repos` absent -> the public side is
           #              still strict; the non-public side is corroborated by
           #              an INDEPENDENT listing (GraphQL, a different backend
@@ -752,15 +764,16 @@ jobs:
               incomplete=1
             fi
           else
-            # `.total_private_repos` is unreadable here. What gates it is
-            # not established (see the header), so its absence licenses no
-            # inference about this token's membership either way. What it
+            # `.total_private_repos` is unreadable here. The permission set
+            # that reads it is measured (see the header), but its absence
+            # still licenses no inference about this token's membership
+            # either way — that half was never isolated. What it
             # DOES mean is the only thing used below: the non-public
             # SHORTFALL is not measurable on this run. Assert what is still
             # assertable — that the token has non-public visibility at all.
             priv_mode=UNVERIFIED
             if [ "$enum_priv" -eq 0 ]; then
-              echo "::error title=org-conformance-sweep::this token enumerated 0 non-public repositories AND cannot read the org's declared non-public count, so the sweep cannot tell a public-only token apart from an org that has none — and must not guess. Grant the existing org secret SYNC_TOKEN to this repository, or create ORG_READ_TOKEN (org-wide), fine-grained with Metadata + Contents + Actions: Read. Add Organization administration: Read to make the non-public count verifiable (VERIFIED mode); without it the non-public side is reported UNVERIFIED. Refusing to report a partial sweep as clean."
+              echo "::error title=org-conformance-sweep::this token enumerated 0 non-public repositories AND cannot read the org's declared non-public count, so the sweep cannot tell a public-only token apart from an org that has none — and must not guess. Grant the existing org secret SYNC_TOKEN to this repository, or create ORG_READ_TOKEN (org-wide), fine-grained with Metadata + Contents + Actions: Read across all repositories. Add organization Administration: Read to make the non-public count verifiable (VERIFIED mode) — that combination is measured to work; without it the non-public side is reported UNVERIFIED. Refusing to report a partial sweep as clean."
               incomplete=1
             elif [ "$corr_priv" = unavailable ]; then
               # UNVERIFIED **and** uncorroborated. Reported separately from
@@ -772,9 +785,9 @@ jobs:
               # enumeration-completeness assertion, and a job that goes red
               # on a transient GraphQL error is a job that gets muted. It is
               # instead said out loud here and in the summary.
-              echo "::warning title=org-conformance-sweep::non-public coverage is UNVERIFIED AND UNCORROBORATED: $enum_priv non-public repositories enumerated, this token cannot read the org's declared count (needs Organization administration: Read), and the independent GraphQL listing was $corr_priv, so NO check on the non-public enumeration ran on this run — not even the truncation check. Treat the non-public findings below as a single unconfirmed listing."
+              echo "::warning title=org-conformance-sweep::non-public coverage is UNVERIFIED AND UNCORROBORATED: $enum_priv non-public repositories enumerated, this token cannot read the org's declared count (add organization Administration: Read to the fine-grained token), and the independent GraphQL listing was $corr_priv, so NO check on the non-public enumeration ran on this run — not even the truncation check. Treat the non-public findings below as a single unconfirmed listing."
             elif [ "$corr_priv" = corroborated ]; then
-              echo "::warning title=org-conformance-sweep::non-public coverage is UNVERIFIED: $enum_priv non-public repositories enumerated and corroborated against an independent GraphQL listing ($gql_priv), but this token cannot read the org's declared count (that field needs Organization administration: Read). A partial non-public grant would be invisible on this run. The findings below are not a completeness guarantee for non-public repositories."
+              echo "::warning title=org-conformance-sweep::non-public coverage is UNVERIFIED: $enum_priv non-public repositories enumerated and corroborated against an independent GraphQL listing ($gql_priv), but this token cannot read the org's declared count (add organization Administration: Read to the fine-grained token; that is the measured route to VERIFIED). A partial non-public grant would be invisible on this run. The findings below are not a completeness guarantee for non-public repositories."
             fi
             # `corr_priv=DISAGREED` deliberately falls through with no message
             # here: the disagreement already raised its own ::error above and
@@ -798,7 +811,7 @@ jobs:
               echo
               echo "Grant the existing org secret \`SYNC_TOKEN\` to this repository, or create \`ORG_READ_TOKEN\` org-wide — fine-grained, **Metadata: Read + Contents: Read + Actions: Read**."
               echo
-              echo "\`declared\` for the non-public side comes from \`total_private_repos\`, which sits in the owner-only block of the org object. **What gates it is not established here:** measured 2026-09-29 against this org, it was absent under every non-member token tried and present under both org-owner tokens tried, including one without \`admin:org\` scope — so it is not that scope. A read-only token not seeing it is **not** a failure: adding **Organization administration: Read** to a fine-grained token is the suggested route to the strict count (VERIFIED) but is **untested**; otherwise the non-public side is reported UNVERIFIED."
+              echo "\`declared\` for the non-public side comes from \`total_private_repos\`, which sits in the owner-only block of the org object. A read-only token not seeing it is **not** a failure. The route to the strict count (VERIFIED) is **measured**: a fine-grained token with repository Actions + Contents + Metadata: Read across all repositories, plus organization **Administration: Read**, reads the field (2026-09-30). That set is not established to be the *minimal* one — no token was tried with Administration: Read absent and the rest present — so grant it whole. Without it the non-public side is reported UNVERIFIED. Details: \`docs/standards/05-workflow-releases.md\`."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
@@ -1896,7 +1909,7 @@ jobs:
             if [ "$priv_mode" = VERIFIED ]; then
               echo "Coverage: **complete and VERIFIED** on both sides — the org declares $dec_pub public + $dec_priv non-public and both were fully enumerated. Independent second listing: public \`$corr_pub\`, non-public \`$corr_priv\` — redundancy in this mode, because the declared counts are themselves the check."
             else
-              echo "Coverage: public side **complete and VERIFIED** against the org's declared $dec_pub (independent second listing: \`$corr_pub\`). Non-public side **UNVERIFIED** — this token cannot read \`total_private_repos\`, so the $enum_priv non-public repositories enumerated here $corr_priv_clause. That field sits in the owner-only block of the org object, and what exactly gates it is **not established** (measured: absent under every non-member token tried, present under both org-owner tokens tried, one of them without \`admin:org\`). Adding **Organization administration: Read** to a fine-grained token is the suggested route to VERIFIED coverage and is **untested here**. **Do not read the non-public findings below as a complete bill of health.**"
+              echo "Coverage: public side **complete and VERIFIED** against the org's declared $dec_pub (independent second listing: \`$corr_pub\`). Non-public side **UNVERIFIED** — this token cannot read \`total_private_repos\`, so the $enum_priv non-public repositories enumerated here $corr_priv_clause. That field sits in the owner-only block of the org object. The measured route to VERIFIED coverage (2026-09-30) is a fine-grained token with repository Actions + Contents + Metadata: Read across all repositories plus organization **Administration: Read**; that set is not established to be minimal, so grant it whole. **Do not read the non-public findings below as a complete bill of health.**"
             fi
             echo
             echo "Pin-drift and run-health findings below are **reported, not gated** — see the follow-up in the PR that introduced them. Only an incomplete enumeration fails this job."

@@ -185,25 +185,18 @@ jobs:
           # comparison is made against the unfiltered enumeration.
           #
           # `total_private_repos` sits in the owner-only block of the org
-          # object, next to `plan` and `disk_usage`. WHAT GATES IT WAS NOT
-          # ESTABLISHED. An earlier revision of this comment asserted it is
-          # "an organization-ADMINISTRATION field, not a membership field";
-          # nobody verified that, and the one measurement available refutes
-          # the scope half of it. Measured 2026-09-29 against this org:
+          # object, next to `plan` and `disk_usage`. The remediation advice
+          # below — add organization `Administration: Read` to a fine-grained
+          # token — is MEASURED, not a guess: on 2026-09-30 a fine-grained
+          # PAT with repository Actions + Contents + Metadata: Read across
+          # all repositories plus that organization permission read the
+          # field, and the org sweep ran VERIFIED on it. It is not
+          # established to be the minimal such set, so it is advised whole.
           #
-          #   token                       scopes                    field
-          #   non-member user             repo, read:org            ABSENT
-          #   non-member user             repo, read:org            ABSENT
-          #   org OWNER, no admin:org     repo, read:org            PRESENT
-          #   org OWNER, with admin:org   admin:org, repo, ...      PRESENT
-          #
-          # So it is NOT the `admin:org` OAuth scope that exposes it: a
-          # read:org token belonging to an org owner sees it. Whether the
-          # discriminator is plain org membership or owner-level privilege
-          # could not be separated, because no non-owner member token was
-          # available; nor was any fine-grained token, so the remediation
-          # advice below (add "Organization administration: Read") is
-          # UNTESTED here and stated as advice, not as a proven mapping.
+          # docs/standards/05-workflow-releases.md is canonical for the
+          # permission table and for the exact limits of that claim
+          # (including that it is NOT the `admin:org` scope, and that plain
+          # org membership was never isolated). Do not restate them here.
           #
           # What that uncertainty means operationally is the only thing this
           # code depends on, and it is established: the field is readable
@@ -809,7 +802,7 @@ jobs:
           unv_pub_why=""
           unv_priv_why=""
           if [ "${COV_PRIV_UNVERIFIED:-0}" = 1 ]; then
-            unv_priv_why="\`total_private_repos\` is not readable by this token, so the audit cannot prove it saw every non-public repository. That field sits in the owner-only block of the org object; what exactly gates it is **not established here** — measured against this org, it was absent for every non-member token tried and present for both org-owner tokens tried, including one without \`admin:org\` scope, so it is not the \`admin:org\` scope that exposes it. Adding **Organization administration: Read** to a fine-grained token is the suggested remedy but was **not tested**."
+            unv_priv_why="\`total_private_repos\` is not readable by this token, so the audit cannot prove it saw every non-public repository. That field sits in the owner-only block of the org object. The fix is measured (2026-09-30): a fine-grained token with repository Actions + Contents + Metadata: Read across all repositories, plus organization **Administration: Read**, reads it. Grant that set whole — it is not established to be the minimal one. See \`docs/standards/05-workflow-releases.md\`."
           fi
           if [ "${COV_PUB_UNVERIFIED:-0}" = 1 ]; then
             unv_pub_why="the read of \`public_repos\` on the org object FAILED, so the **public** side of the coverage arithmetic never ran and the audit cannot prove it enumerated every public repository. \`public_repos\` is a public field that any working token can read, so this is **not** a token-scope gap: it is a failed request — a rate limit, a 5xx, or a transport error — and a re-run is the remedy. Do not change token permissions on account of this sentence."

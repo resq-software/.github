@@ -12,11 +12,17 @@ no tags, so there was nothing to bump to, and Dependabot did nothing. It did
 not warn; there was no error to see. Consumers sat on April and June pins
 while fixes landed here on `main`.
 
-Eight of the repos that already had the `github-actions` ecosystem enabled
-were waiting on a target that did not exist. (This section used to say "eight
-of eleven". Eleven was a public-only view of the org, which has twenty
-non-archived repositories — the same blind spot that made the drift check
-below report a clean bill of health it had not earned.)
+The repos that already had the `github-actions` ecosystem enabled were
+waiting on a target that did not exist, and still are. Measured 2026-09-30
+against a fully enumerated org: **15 of the 20 non-archived repositories**
+have the ecosystem enabled, and all 15 find nothing to bump.
+
+(This section has carried two undercounts. It first said "eight of eleven";
+eleven was a public-only view of an org that has twenty non-archived
+repositories — the same blind spot that made the drift check below report a
+clean bill of health it had not earned. It then said "eight", still a
+public-only figure. Both are superseded by the line above, which is the first
+count taken with non-public coverage VERIFIED.)
 
 ## The contract
 
@@ -25,8 +31,9 @@ below report a clean bill of health it had not earned.)
    for a new input or job, `PATCH` for a fix that changes no interface.
 
    This is an obligation, not a description. It is **not yet true**: this repo
-   has no tags and no releases, and 47 commits have landed on `main` since the
-   oldest pin still in use. `06-versioning.md` — "a repo that publishes
+   has no tags and no releases, and 48 commits have landed on `main` since the
+   oldest pin still in use (that pin dates to 2026-04-17; the count is as of
+   2026-09-30 and only grows). `06-versioning.md` — "a repo that publishes
    nothing still tags" — makes this a rule this repo is itself breaking, and
    it is why propagation is still manual. Clauses 2 and 3 cannot function
    until it is honoured.
@@ -40,15 +47,27 @@ below report a clean bill of health it had not earned.)
    The SHA is what runs; the comment is what lets Dependabot find the next
    version.
 
-   Currently **no pin in the org carries that comment**, and while clause 1 is
-   unmet there is no version for one to name, so the stated rationale is
-   inoperative. `org-conformance-sweep.yml` therefore reports the count with
-   that caveat attached, rather than filing it against each consumer for a
-   gap on the producer side.
+   Still true, and now measured across the whole org rather than its public
+   half: the 2026-09-30 VERIFIED run found **22 pins, 22 of them without a
+   version comment**. While clause 1 is unmet there is no version for one to
+   name, so the stated rationale is inoperative.
+   `org-conformance-sweep.yml` therefore reports the count with that caveat
+   attached, rather than filing it against each consumer for a gap on the
+   producer side.
 3. **Consumers enable the `github-actions` ecosystem** in
    `.github/dependabot.yml`. Its scheduled run then opens a grouped update
    PR for whatever releases are available at that point — propagation is
    systematic, and still reviewed.
+
+   **As written, this clause describes nothing that currently happens.** It
+   is not weakened here to make it true: it is the standard, and the standard
+   is unmet. 15 of 20 repositories have the ecosystem enabled and this repo
+   has zero tags and zero releases, so all 15 scans resolve to no target and
+   open no PR. Dependabot raises no error for this — the symptom is silence,
+   which is how the gap survived five months. Nothing on the consumer side
+   closes it. Honouring clause 1 does, and only clause 1 does: the first tag
+   and release cut here gives clauses 2 and 3 something to name and something
+   to bump to on the same day.
 
    Note what that does *not* promise. The scan is weekly and this repo's
    own config groups all Actions updates, so several releases inside one
@@ -89,13 +108,20 @@ reports INCOMPLETE and exits non-zero, instead of rendering the repos it could
 see as a clean result. It needs a token that can read every repo to do that —
 the existing org secret `SYNC_TOKEN` granted to this repository, or an
 org-wide `ORG_READ_TOKEN`, fine-grained with Metadata, Contents and Actions
-read. Until one is available the weekly run is red on purpose. A clean report
-from it now means clean, not silent.
+read, plus organization Administration: Read for the strict non-public count
+(see the permission table below).
+
+Such a token is now configured. The sentence that stood here — "until one is
+available the weekly run is red on purpose" — described 2026-09-28 and is no
+longer the state: the 2026-09-30 run completed green with non-public coverage
+**VERIFIED**. A clean report from it now means clean, not silent.
 
 That guarantee is bounded by which mode the run was in, and the bound matters
-because the report is easy to over-read. A **VERIFIED** report is the strong
-claim: both sides were checked against the org's own declared counts, so a
-clean result means every repository in the org was checked. An **UNVERIFIED**
+because the report is easy to over-read. Both modes stay documented: the
+weaker one is reachable again the moment the token cannot read the declared
+count. A **VERIFIED** report is the strong claim: both sides were checked
+against the org's own declared counts, so a clean result means every
+repository in the org was checked. An **UNVERIFIED**
 report is not that claim and must not be quoted as one. It establishes that
 the public side is complete and that the token can see *some* non-public
 repositories; it **cannot prove that it saw every non-public repository**,
@@ -111,24 +137,44 @@ checked strictly against it. The non-public side depends on
 `total_private_repos`, which sits in the owner-only block of the org object
 alongside `plan` and `disk_usage`.
 
-**What gates that field is not established, and this document previously
-claimed otherwise.** An earlier revision asserted it is an
-*organization-administration* field and *not* a membership field. Nobody
-verified that. What was actually measured, against this org on 2026-09-29:
+**The fine-grained route is now measured.** Two earlier revisions of this
+document got this wrong in opposite directions — the first asserted the field
+is an *organization-administration* field and *not* a membership field, which
+nobody had checked; the second recorded that the fine-grained advice was
+untested, which was true when written and is no longer. A fine-grained token
+has since been built and run. Every row below is a reading of
+`/orgs/{org}` `.total_private_repos` against this org:
 
-| token belongs to | scopes | `total_private_repos` |
-| --- | --- | --- |
-| a user who is not a member of the org | `repo`, `read:org` | absent |
-| a user who is not a member of the org | `repo`, `read:org` | absent |
-| a user who is an org **owner** | `repo`, `read:org` | present |
-| a user who is an org **owner** | `admin:org`, `repo`, ... | present |
+| token | permissions | `total_private_repos` | measured |
+| --- | --- | --- | --- |
+| a user who is not a member of the org | classic `repo`, `read:org` | absent | 2026-09-29 |
+| a user who is not a member of the org | classic `repo`, `read:org` | absent | 2026-09-29 |
+| a user who is an org **owner** | classic `repo`, `read:org` | present | 2026-09-29 |
+| a user who is an org **owner** | classic `admin:org`, `repo`, … | present | 2026-09-29 |
+| fine-grained PAT, **all** repositories | repository Actions + Contents + Metadata: Read, **plus organization Administration: Read** | **present** | 2026-09-30 |
 
-So it is **not** the `admin:org` scope that exposes it — a `read:org` token
-belonging to an org owner sees it. Whether the discriminator is plain org
-membership or owner-level privilege could not be separated: no non-owner
-member token was available, and no fine-grained token was available either, so
-the advice to add **Organization administration: Read** to a fine-grained
-token is a suggestion, not a verified mapping.
+Two things follow. It is **not** the `admin:org` scope that exposes the field
+— a `read:org` token belonging to an org owner sees it. And the fine-grained
+route works: with that last permission set the sweep ran in **VERIFIED** mode
+on 2026-09-30, reporting
+`non-public coverage=VERIFIED second-listing=corroborated`.
+
+State the limit of that result precisely, because it is narrower than it
+looks. What is established is that **this permission set exposes the field**.
+What is **not** established:
+
+* **That the set is minimal.** Every permission in that row was granted at
+  once. None was dropped and the token re-tested.
+* **That `Administration: Read` is the permission doing the work.** No token
+  was tried with `Administration: Read` absent and the rest present. The
+  field's appearance is therefore attributed to the set as a whole, not to any
+  one member of it.
+* **Whether plain org membership would also suffice.** The classic-token rows
+  above leave that open, and still do: no non-owner member token has ever been
+  available to separate membership from owner-level privilege.
+
+So grant the whole set. Do not trim it on the assumption that some subset is
+enough — that is precisely the experiment nobody has run.
 
 The gate therefore has two modes, which is all the sweep depends on. When the
 field is readable, the non-public side is checked strictly against it
