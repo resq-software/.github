@@ -16,6 +16,29 @@
 # Private repos are audited only when a repo-scoped PAT is available
 # as the `SYNC_TOKEN` org secret; otherwise the run falls back to
 # GITHUB_TOKEN and reports unreachable private repos separately.
+#
+# DISCLOSURE — read this before changing any output string.
+#
+# This workflow runs on `resq-software/.github`, which is PUBLIC. Its step
+# logs are world-readable and the tracking issue it opens is a PUBLIC issue.
+# Every repo name, default-branch name and finding it interpolates is
+# therefore published.
+#
+# Until now that leaked nothing only by accident: GITHUB_TOKEN cannot see
+# non-public repos, so the lists came back public-only. The moment a broader
+# token (`SYNC_TOKEN`, or the `ORG_READ_TOKEN` the conformance sweep asks
+# for) is granted to this repository, the same code would begin publishing
+# non-public repository names and their default branches into a public issue.
+#
+# The report is therefore two-tiered, split on the `private` flag from the
+# org enumeration:
+#   * public repositories    — full detail; every fact is already public.
+#   * non-public repositories — counts only. No name, no branch name.
+# The split is structural, not cosmetic: a non-public repo's name is never
+# written into `gap_list`, `unreachable_list` or `exempt_list` at all, so no
+# format string downstream can carry it into the log or the issue body.
+# This includes the ruleset `exclude` list, which today already contains a
+# non-public repository name and must not be echoed raw.
 
 name: audit-required-job
 
@@ -69,6 +92,17 @@ jobs:
             export GH_TOKEN="$FALLBACK_TOKEN"
           fi
 
+          # Enumerate FIRST, carrying the visibility flag. Everything below
+          # needs the public/non-public split before it prints anything, the
+          # ruleset exclude list included.
+          repo_rows=$(gh api --paginate "/orgs/$ORG/repos?type=all&per_page=100" \
+            --jq '.[] | select(.archived == false)
+                      | [.name, (if .private then "private" else "public" end)] | @tsv')
+
+          is_public() {
+            printf '%s\n' "$repo_rows" | awk -F'\t' -v r="$1" '$1==r && $2=="public"{f=1} END{exit !f}'
+          }
+
           # Ruleset endpoint requires admin:org scope. If the available
           # token (GITHUB_TOKEN by default) can't read it, degrade
           # gracefully: treat the exclude list as empty. Informational;
@@ -76,25 +110,50 @@ jobs:
           # governed.
           if excluded=$(gh api "/orgs/$ORG/rulesets/$RULESET_ID" \
                --jq '.conditions.repository_name.exclude // [] | join(" ")' 2>/dev/null); then
-            echo "exempted-by-ruleset: ${excluded:-<none>}"
+            # NEVER echo this list raw. It is org ruleset configuration and it
+            # currently names a non-public repository; this log is public.
+            # Print only entries confirmed public by the enumeration above. An
+            # entry that is not a known public repo is counted, not named — it
+            # is either non-public or stale, and both are disclosures.
+            excl_public=""
+            excl_withheld=0
+            for e in $excluded; do
+              if is_public "$e"; then
+                excl_public="${excl_public}${e} "
+              else
+                excl_withheld=$((excl_withheld + 1))
+              fi
+            done
+            echo "exempted-by-ruleset (public): ${excl_public:-<none>}"
+            echo "exempted-by-ruleset (non-public or not enumerated): $excl_withheld (names withheld — this log is public)"
           else
             excluded=""
             echo "::warning::Could not read /orgs/$ORG/rulesets/$RULESET_ID — assuming exclude list is empty. Set SYNC_TOKEN (with admin:org scope) at the org or repo level for authoritative results."
           fi
 
-          repos=$(gh api --paginate "/orgs/$ORG/repos?type=all&per_page=100" \
-            --jq '.[] | select(.archived == false) | .name')
-
+          # Tier 1: public detail. Tier 2: counters only.
           gap_list=""
           unreachable_list=""
           exempt_list=""
           ok_count=0
           gap_count=0
+          np_gap=0
+          np_unreachable=0
+          np_exempt=0
+          np_ok=0
 
-          for repo in $repos; do
+          # Fed by process substitution, NOT a pipe: a pipe would run this loop
+          # in a subshell and silently discard every counter increment below.
+          while IFS=$'\t' read -r repo vis; do
+            [ -n "$repo" ] || continue
+
             default=$(gh api "/repos/$ORG/$repo" --jq '.default_branch' 2>/dev/null || echo "")
             if [ -z "$default" ]; then
-              unreachable_list="${unreachable_list}- $repo"$'\n'
+              if [ "$vis" = public ]; then
+                unreachable_list="${unreachable_list}- $repo"$'\n'
+              else
+                np_unreachable=$((np_unreachable + 1))
+              fi
               continue
             fi
 
@@ -123,6 +182,7 @@ jobs:
 
             if [ "$has_required" = yes ]; then
               ok_count=$((ok_count + 1))
+              [ "$vis" = public ] || np_ok=$((np_ok + 1))
               continue
             fi
 
@@ -131,18 +191,32 @@ jobs:
               if [ "$e" = "$repo" ]; then is_exempt=yes; break; fi
             done
             if [ "$is_exempt" = yes ]; then
-              exempt_list="${exempt_list}- $repo"$'\n'
+              if [ "$vis" = public ]; then
+                exempt_list="${exempt_list}- $repo"$'\n'
+              else
+                np_exempt=$((np_exempt + 1))
+              fi
               continue
             fi
 
-            gap_list="${gap_list}- $repo (branch=\`$default\`)"$'\n'
             gap_count=$((gap_count + 1))
-          done
+            if [ "$vis" = public ]; then
+              # The default-branch name is published here. That is fine for a
+              # public repo and is never reached for a non-public one.
+              gap_list="${gap_list}- $repo (branch=\`$default\`)"$'\n'
+            else
+              np_gap=$((np_gap + 1))
+            fi
+          done < <(printf '%s\n' "$repo_rows")
 
-          echo "summary: ok=$ok_count  gaps=$gap_count  exempt=$(printf '%s' "$exempt_list" | grep -c '^-' || true)"
+          echo "summary: ok=$ok_count  gaps=$gap_count  public-gaps=$((gap_count - np_gap))  non-public-gaps=$np_gap  unreachable-non-public=$np_unreachable"
 
           {
             echo "gap_count=$gap_count"
+            echo "np_gap=$np_gap"
+            echo "np_unreachable=$np_unreachable"
+            echo "np_exempt=$np_exempt"
+            echo "np_ok=$np_ok"
             echo "gap_list<<GAPEOF"
             printf '%s' "${gap_list:-*(none)*
           }"
@@ -164,28 +238,46 @@ jobs:
           GAP_LIST: ${{ steps.scan.outputs.gap_list }}
           UNREACHABLE_LIST: ${{ steps.scan.outputs.unreachable_list }}
           EXEMPT_LIST: ${{ steps.scan.outputs.exempt_list }}
+          NP_GAP: ${{ steps.scan.outputs.np_gap }}
+          NP_UNREACHABLE: ${{ steps.scan.outputs.np_unreachable }}
+          NP_EXEMPT: ${{ steps.scan.outputs.np_exempt }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           TITLE: 'chore(governance): required-job audit — repos missing `required` status-check gate'
         shell: bash
         run: |
           set -euo pipefail
 
+          # This issue is created on a PUBLIC repository. Only the tier-1
+          # (public-repo) lists are interpolated; non-public repositories
+          # appear as counts, which is all the scan step recorded for them.
           body=$(cat <<BODYEOF
           The weekly \`required\`-job audit detected repos without a CI job emitting the \`required\` status-check context.
 
           These repos are governed by org ruleset \`default-branch-baseline\` (id 15191038) which requires that context. Until a \`required\` job is added, PRs will hang in "Expected — Waiting for status to be reported" and be blocked from merge.
 
-          ## Repos missing the \`required\` job
+          ## Public repos missing the \`required\` job
 
           ${GAP_LIST}
 
-          ## Repos exempt via ruleset \`exclude\` list (informational)
+          ## Public repos exempt via ruleset \`exclude\` list (informational)
 
           ${EXEMPT_LIST}
 
-          ## Repos unreachable by the audit runner (likely private; set \`SYNC_TOKEN\` for full coverage)
+          ## Public repos unreachable by the audit runner
 
           ${UNREACHABLE_LIST}
+
+          ## Non-public repositories
+
+          This issue is public, so non-public repositories are reported as counts only — no names, no branch names.
+
+          | | count |
+          | --- | --- |
+          | missing the \`required\` job | ${NP_GAP} |
+          | exempt via ruleset \`exclude\` | ${NP_EXEMPT} |
+          | unreachable by the audit runner | ${NP_UNREACHABLE} |
+
+          If \`unreachable\` is non-zero, the audit is running without a token that can see the whole org and its coverage is partial. If \`missing\` is non-zero, the detail is deliberately not here: read it from the workflow run's own per-repo API calls, or route it to an issue on a non-public repository.
 
           ## Fix
 

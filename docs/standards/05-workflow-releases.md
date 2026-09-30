@@ -12,14 +12,24 @@ no tags, so there was nothing to bump to, and Dependabot did nothing. It did
 not warn; there was no error to see. Consumers sat on April and June pins
 while fixes landed here on `main`.
 
-Eight of eleven repos already had the `github-actions` ecosystem enabled and
-were waiting on a target that did not exist.
+Eight of the repos that already had the `github-actions` ecosystem enabled
+were waiting on a target that did not exist. (This section used to say "eight
+of eleven". Eleven was a public-only view of the org, which has twenty
+non-archived repositories — the same blind spot that made the drift check
+below report a clean bill of health it had not earned.)
 
 ## The contract
 
-1. **Every user-visible workflow change gets a tag here.** Semver on the
+1. **Every user-visible workflow change MUST get a tag here.** Semver on the
    workflows as an interface: `MAJOR` for a breaking input change, `MINOR`
    for a new input or job, `PATCH` for a fix that changes no interface.
+
+   This is an obligation, not a description. It is **not yet true**: this repo
+   has no tags and no releases, and 47 commits have landed on `main` since the
+   oldest pin still in use. `06-versioning.md` — "a repo that publishes
+   nothing still tags" — makes this a rule this repo is itself breaking, and
+   it is why propagation is still manual. Clauses 2 and 3 cannot function
+   until it is honoured.
 2. **Consumers pin by SHA with a trailing version comment**, the same
    convention this repo already applies to third-party actions:
 
@@ -29,6 +39,12 @@ were waiting on a target that did not exist.
 
    The SHA is what runs; the comment is what lets Dependabot find the next
    version.
+
+   Currently **no pin in the org carries that comment**, and while clause 1 is
+   unmet there is no version for one to name, so the stated rationale is
+   inoperative. `org-conformance-sweep.yml` therefore reports the count with
+   that caveat attached, rather than filing it against each consumer for a
+   gap on the producer side.
 3. **Consumers enable the `github-actions` ecosystem** in
    `.github/dependabot.yml`. Its scheduled run then opens a grouped update
    PR for whatever releases are available at that point — propagation is
@@ -49,5 +65,32 @@ here ships `default: false`.
 
 ## Checking for drift
 
-`org-conformance-sweep.yml` reports which repos are pinned behind the current
-release. A repo more than one minor version behind is drift, not a decision.
+`org-conformance-sweep.yml` reads every
+`uses: resq-software/.github/.github/workflows/<wf>@<sha>` in every repo it
+can enumerate and reports, per pin, how old the pinned commit is and which
+workflows have actually changed since — **including the siblings
+`required.yml` pulls in by `./` path, which GitHub resolves at the caller's
+pinned ref**. A repo on an old `required.yml` is running that whole reusable
+suite at that vintage, whatever it pins for the siblings directly, so a check
+that reads only the direct pin under-reports badly.
+
+It detects drift. It does not fix it: there is no remediation step and no
+automatic PR. And because clause 1 is unmet, "behind the current release" is
+not yet a measurable statement — the sweep measures the **age of the pinned
+commit** instead (flagging at 30 days and at 90), and separately reports that
+a pin carries no `# vX.Y.Z` comment.
+
+Those two thresholds are reported, not enforced: most pins in the org are
+already past 90 days, and a check that fails on arrival gets muted rather than
+fixed. They become blocking once the current backlog is cleared.
+
+The sweep does hard-fail on one thing: if it cannot enumerate the whole org it
+reports INCOMPLETE and exits non-zero, instead of rendering the repos it could
+see as a clean result. It needs a token that can read every repo to do that —
+the existing org secret `SYNC_TOKEN` granted to this repository, or an
+org-wide `ORG_READ_TOKEN`, fine-grained with Metadata, Contents and Actions
+read. Until one is available the weekly run is red on purpose. A clean report
+from it now means clean, not silent.
+
+What it still does not check: whether a pinned workflow is *behind a release*
+(there are none), and whether the drift it finds ever gets fixed.

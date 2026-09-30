@@ -14,9 +14,27 @@
 # Read-only — it reads repo contents through the API and writes nothing back.
 #
 # TOKEN: needs read access to sibling repos, which GITHUB_TOKEN does not have.
-# Set an `ORG_READ_TOKEN` secret (fine-grained, org-wide, Contents: Read).
-# Without it the sweep reports every repo as UNREADABLE rather than clean —
-# silence must never be mistaken for conformance.
+# GITHUB_TOKEN sees public repos only, so it enumerates a fraction of the org.
+# Provide ONE of:
+#   * the existing org secret `SYNC_TOKEN`, granted to this repository, or
+#   * a new org-wide secret `ORG_READ_TOKEN`,
+# either way fine-grained with Metadata: Read + Contents: Read + Actions: Read.
+# `Actions: Read` is required by the run-health check (check 7) and is NOT
+# covered by the Contents-only scope this comment asked for previously.
+#
+# Until such a token is available this job FAILS LOUDLY: the completeness
+# assertion below refuses to report a sweep that covered part of the org, and
+# a red weekly job is the intended outcome. Silence must never be mistaken for
+# conformance — a false "all clean" is the exact failure this sweep exists to
+# prevent, and it is what it actually reported on 2026-09-28.
+#
+# DISCLOSURE: this repository is PUBLIC, so the job summary, every annotation
+# and every line of step log is world-readable. The report is therefore
+# two-tiered, split on the `private` flag from the org enumeration:
+#   * public repositories    — full detail; every fact is already public.
+#   * non-public repositories — counts and severities only. No name, no file
+#     name, no SHA, no workflow name, no per-repo row. Detail is never placed
+#     in a tier-1 variable, so no format string can carry it into the summary.
 
 name: org-conformance-sweep
 
@@ -38,29 +56,95 @@ on:
 
 permissions:
   contents: read
+  # Needed so the GITHUB_TOKEN fallback can read this repo's own run history.
+  # Cross-repo run reads come from the broader token, not from this block.
+  actions: read
 
 jobs:
   sweep:
     name: org-conformance-sweep
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2
         with:
           egress-policy: audit
 
+      - name: Write pin parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sweep"
+          cat > "$RUNNER_TEMP/sweep/pins.awk" <<'AWK'
+          # Emits: workflow \t ref \t refkind \t version-comment
+          #
+          # awk, not sed: every sed delimiter collides with real data on these
+          # lines — `#` with the trailing version comment, `@` with the ref
+          # separator, `|` with YAML block scalars.
+          #
+          # Anchored on `uses:` at any indent, so a commented-out pin is
+          # correctly invisible. Tolerates a trailing `# main`, a second
+          # comment (`# main  # zizmor: ignore[...]`) and a `#NN` issue
+          # reference, none of which is a version.
+          match($0, /^[[:space:]]*uses:[[:space:]]*resq-software\/\.github\/\.github\/workflows\/[^[:space:]]+/) {
+            tok = substr($0, RSTART, RLENGTH)
+            sub(/^[[:space:]]*uses:[[:space:]]*/, "", tok)
+            n = split(tok, a, "@")
+            wf = a[1]; sub(/^.*\/workflows\//, "", wf)
+            ref = a[n]
+            kind = (ref ~ /^[0-9a-f]{40}$/) ? "sha40" \
+                 : ((ref ~ /^[0-9a-f]{7,39}$/) ? "SHORT-SHA" : "NOT-A-SHA")
+            ver = ""
+            if (match($0, /#[[:space:]]*v[0-9][0-9A-Za-z.+-]*/)) {
+              ver = substr($0, RSTART, RLENGTH); sub(/^#[[:space:]]*/, "", ver)
+            }
+            printf "%s\t%s\t%s\t%s\n", wf, ref, kind, ver
+          }
+          AWK
+          awk -f "$RUNNER_TEMP/sweep/pins.awk" </dev/null
+          echo "pin parser OK"
+
       - name: Sweep org repositories
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.ORG_READ_TOKEN || github.token }}
+          # Candidates in preference order. Each is probed for real org reads
+          # before use; a set-but-rejected token (expired, or a classic PAT the
+          # org forbids) must not hard-fail here — it degrades, and then the
+          # completeness assertion fails loudly with a precise reason.
+          ORG_READ_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          FALLBACK_TOKEN: ${{ github.token }}
           FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
           # Escape hatch only. Deliberately empty: a repo suppressed here is a
           # repo nobody is checking, so a finding should be fixed rather than
           # skipped.
           SKIP_REPOS: ${{ inputs.skip-repos }}
           ORG: ${{ github.repository_owner }}
+          AWK_PINS: ${{ runner.temp }}/sweep/pins.awk
         run: |
           set -euo pipefail
+
+          # ---- Token selection --------------------------------------------
+          # Mirrors the probe audit-required-job.yml already uses. A token that
+          # is set but cannot read the org is worse than an absent one, because
+          # it looks configured.
+          token_used=none
+          for cand in ORG_READ_TOKEN SYNC_TOKEN FALLBACK_TOKEN; do
+            v=${!cand:-}
+            [ -n "$v" ] || continue
+            GH_TOKEN="$v"; export GH_TOKEN
+            if gh api "/orgs/$ORG/repos?per_page=1&type=all" >/dev/null 2>&1; then
+              token_used=$cand
+              break
+            fi
+            echo "::warning title=org-conformance-sweep::$cand is set but cannot read /orgs/$ORG (expired, or rejected by org policy) — trying the next candidate."
+          done
+          if [ "$token_used" = none ]; then
+            echo "::error title=org-conformance-sweep::no token can read /orgs/$ORG. Grant the existing org secret SYNC_TOKEN to this repository, or create ORG_READ_TOKEN (org-wide), fine-grained with Metadata+Contents+Actions: Read."
+            exit 1
+          fi
+          echo "sweep: token=$token_used"
 
           # Print a repo file's contents; empty if absent OR unreadable. The
           # caller must have already established readability via ls_workflows,
@@ -111,26 +195,283 @@ jobs:
             '
           }
 
-          # A partial or failed enumeration must not read as "all clean" — that
-          # is the exact false-assurance mode this sweep exists to prevent.
-          if ! repos=$(gh repo list "$ORG" --limit 1000 --no-archived \
-                         --json name --jq '.[].name' | sort); then
-            echo "::error title=org-conformance-sweep::cannot enumerate $ORG — set ORG_READ_TOKEN (org-wide, Contents: Read)."
+          # ---- A1: completeness assertion ---------------------------------
+          # The old floor (`-lt 2`) only caught total enumeration failure. A
+          # public-only token enumerates 11 of 20 and sails through it — which
+          # is precisely what produced the false "0/11 with findings, 0
+          # unreadable" clean report on 2026-09-28. Assert against the org's
+          # own declared counts instead, on BOTH sides.
+          #
+          # `public_repos` is a public field; `total_private_repos` is visible
+          # only to an org member. Its ABSENCE is therefore itself a finding:
+          # a token that cannot see it is not an org member and cannot be
+          # complete. Both branches below fail, so the sweep is correct
+          # whichever way the running token behaves.
+          #
+          # Counts are taken over `type=all` on both sides because
+          # `public_repos` includes archived public repos; archived repos are
+          # excluded later, for the CHECKS, not for the completeness maths.
+          if ! org_json=$(gh api "/orgs/$ORG"); then
+            echo "::error title=org-conformance-sweep::cannot read /orgs/$ORG — a broader token is required."
             exit 1
           fi
-          repo_count=$(printf '%s\n' "$repos" | grep -c . || true)
-          if [ "${repo_count:-0}" -lt 2 ]; then
-            echo "::error title=org-conformance-sweep::enumerated only ${repo_count:-0} repo(s) — GITHUB_TOKEN cannot list the org. Set ORG_READ_TOKEN."
+          dec_pub=$(printf '%s' "$org_json" | jq -r '.public_repos // "null"')
+          dec_priv=$(printf '%s' "$org_json" | jq -r '.total_private_repos // "null"')
+
+          if ! all_repos=$(gh api --paginate "/orgs/$ORG/repos?type=all&per_page=100" \
+                 --jq '.[] | [(if .private then "private" else "public" end),
+                              (if .archived then "archived" else "active" end),
+                              .name] | @tsv'); then
+            echo "::error title=org-conformance-sweep::cannot enumerate $ORG."
+            exit 1
+          fi
+          enum_pub=$(printf '%s\n'  "$all_repos" | grep -c '^public'  || true)
+          enum_priv=$(printf '%s\n' "$all_repos" | grep -c '^private' || true)
+
+          incomplete=0
+          if [ "$dec_pub" != null ] && [ "$enum_pub" -lt "$dec_pub" ]; then
+            echo "::error title=org-conformance-sweep::enumerated $enum_pub of $dec_pub public repositories — $((dec_pub - enum_pub)) unreadable. Findings below are NOT a clean bill of health."
+            incomplete=1
+          fi
+          if [ "$dec_priv" = null ]; then
+            echo "::error title=org-conformance-sweep::this token cannot read the org's non-public repository count, so it is not an org member and cannot enumerate the whole org. Grant the existing org secret SYNC_TOKEN to this repository, or create ORG_READ_TOKEN (org-wide), fine-grained with Metadata+Contents+Actions: Read. Refusing to report a partial sweep as clean."
+            incomplete=1
+          elif [ "$enum_priv" -lt "$dec_priv" ]; then
+            # COUNT ONLY. Names are withheld: this log is world-readable.
+            echo "::error title=org-conformance-sweep::$((dec_priv - enum_priv)) of $dec_priv non-public repositories are not readable by this token (names withheld — this log is public). Grant a broader token; see docs/standards/05-workflow-releases.md."
+            incomplete=1
+          fi
+          if [ "$incomplete" -ne 0 ]; then
+            {
+              echo "## Org CI-configuration sweep — INCOMPLETE"
+              echo
+              echo "Enumeration did not cover the whole org, so **no conclusion about conformance can be drawn from this run.** This is the intended outcome of a missing token, not a flake."
+              echo
+              echo "| side | declared | enumerated |"
+              echo "| --- | --- | --- |"
+              echo "| public | $dec_pub | $enum_pub |"
+              echo "| non-public | $dec_priv | $enum_priv |"
+              echo
+              echo "Grant the existing org secret \`SYNC_TOKEN\` to this repository, or create \`ORG_READ_TOKEN\` org-wide — fine-grained, Metadata: Read + Contents: Read + Actions: Read."
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
-          total=0 affected=0 unreadable=0
-          {
-            echo "## Org CI-configuration sweep"
-            echo
-            echo "| repo | finding |"
-            echo "| --- | --- |"
-          } >> "$GITHUB_STEP_SUMMARY"
+          # Archived repos are out of scope for the checks, in scope for the
+          # maths above. Split only now.
+          repos=$(printf '%s\n' "$all_repos" | awk -F'\t' '$2=="active"{print $3}' | sort)
+          vis_of() { printf '%s\n' "$all_repos" | awk -F'\t' -v r="$1" '$3==r{print $1}'; }
+
+          # ---- A2: pin-drift (check 6) ------------------------------------
+          # Reads the ref of every `uses: resq-software/.github/...@<ref>` and
+          # asks the compare API how far behind main it is. No previous check
+          # read a pinned ref at all, so pin drift was structurally invisible.
+          #
+          # TRANSITIVE AMPLIFIER: required.yml calls its siblings by local
+          # `./` path, and GitHub resolves `./` at the CALLER'S pinned ref. A
+          # repo on required.yml@<old> therefore runs security-scan, rust-ci,
+          # node-ci, dotnet-ci, cpp-ci, python-ci and repo-standards at that
+          # vintage too, whatever it pins for them directly. Reporting only
+          # the direct pin understates this badly. The sibling set is read
+          # from required.yml AT MAIN rather than hardcoded, because it has
+          # changed: it was 6 workflows at f4b51a62 and is 7 at main, so a
+          # hardcoded list would under-report exactly the oldest pins.
+          #
+          # `ahead_by` counts commits to the WHOLE repo, so alone it flags a
+          # pin whose target never changed. The same compare response carries
+          # `.files`, so intersecting the effective surface with the changed
+          # file list costs no extra call and turns that noise into a true
+          # zero. Measured: rust-ci@5261ae18 is ahead_by=1 and
+          # repo-standards@8fe6c2e4 is ahead_by=4, and neither target changed.
+          # Do not drop that filter to simplify — it is what keeps this honest.
+          SIBLINGS=$(gh api "/repos/$ORG/.github/contents/.github/workflows/required.yml" \
+                       --jq '.content' | base64 -d \
+                     | sed -n 's|^[[:space:]]*uses:[[:space:]]*\./\.github/workflows/\([A-Za-z0-9._-]*\).*|\1|p' \
+                     | sort -u | tr '\n' ' ')
+          echo "sweep: required.yml siblings at main: $SIBLINGS"
+
+          # Thresholds. The org contract says "more than one minor version
+          # behind is drift". With zero tags here that is unmeasurable, so the
+          # age of the pinned commit is the honest proxy — and only when the
+          # effective surface actually changed.
+          PIN_WARN_DAYS=30   # four weekly Dependabot intervals: a missed cycle
+          PIN_FAIL_DAYS=90   # a full quarter
+          NOW=$(date -u +%s)
+
+          declare -A CMP_ST CMP_AHEAD CMP_DATE CMP_FILES
+          compare_ref() {
+            local ref="$1" j
+            if [ -n "${CMP_ST[$ref]:-}" ]; then return 0; fi
+            j=$(gh api "/repos/$ORG/.github/compare/$ref...main" 2>/dev/null) || return 1
+            CMP_ST[$ref]=$(printf '%s' "$j" | jq -r '.status')
+            CMP_AHEAD[$ref]=$(printf '%s' "$j" | jq -r '.ahead_by')
+            CMP_DATE[$ref]=$(printf '%s' "$j" | jq -r '.base_commit.commit.committer.date')
+            CMP_FILES[$ref]=$(printf '%s' "$j" \
+              | jq -r '[.files[]?.filename | select(startswith(".github/workflows/"))] | join(" ")')
+            return 0
+          }
+
+          # $1 repo  $2 visibility  $3 caller filename  $4 file body
+          #
+          # NOTE: the read loop is fed by process substitution, NOT a pipe. A
+          # pipe would run the loop body in a subshell and silently discard
+          # every counter increment below — a trap this repo has already hit.
+          check_pins() {
+            local r="$1" vis="$2" f="$3" body="$4"
+            local wf ref kind ver eff e stale sev days
+            while IFS=$'\t' read -r wf ref kind ver; do
+              if [ -z "$wf" ]; then continue; fi
+              pin_total=$((pin_total + 1))
+              if [ -z "$ver" ]; then
+                pin_nover=$((pin_nover + 1))
+                if [ "$vis" = public ]; then
+                  nover_rows="${nover_rows}| \`$r\` | \`$f\` | \`$wf@${ref:0:8}\` |"$'\n'
+                fi
+              fi
+              days=-1; stale=""
+              if [ "$kind" != sha40 ]; then
+                sev=UNPINNED
+              elif ! compare_ref "$ref"; then
+                sev=UNRESOLVABLE
+              else
+                days=$(( ( NOW - $(date -u -d "${CMP_DATE[$ref]}" +%s) ) / 86400 ))
+                eff="$wf"
+                if [ "$wf" = required.yml ]; then eff="$wf $SIBLINGS"; fi
+                for e in $eff; do
+                  case " ${CMP_FILES[$ref]} " in
+                    *" .github/workflows/$e "*) stale="$stale $e" ;;
+                  esac
+                done
+                if [ "${CMP_ST[$ref]}" != ahead ]; then
+                  # behind / diverged / identical-but-not-ancestor: the ref is
+                  # not an ancestor of main at all (force-push, deleted
+                  # branch). Worse than drift, and never "current".
+                  sev=OFF-MAIN
+                elif [ -z "$stale" ]; then sev=current
+                elif [ "$days" -ge "$PIN_FAIL_DAYS" ]; then sev="STALE-90d"
+                elif [ "$days" -ge "$PIN_WARN_DAYS" ]; then sev="stale-30d"
+                else sev=info
+                fi
+              fi
+              case "$sev" in current|info) ;; *) pin_bad=$((pin_bad + 1)) ;; esac
+              if [ "$vis" = public ]; then
+                pin_rows="${pin_rows}| $sev | \`$r\` | \`$f\` | \`$wf@${ref:0:8}\` | ${CMP_DATE[$ref]:0:10} | $days | ${CMP_AHEAD[$ref]:--} | ${stale:-—} |"$'\n'
+                case "$sev" in
+                  current|info) ;;
+                  *) echo "::warning title=org-conformance-sweep::$r $f pins $wf@${ref:0:8} — $sev (${days}d;${stale:- no target change})" ;;
+                esac
+              else
+                # Tier 2. The name, the caller file name and the SHA are never
+                # written anywhere they could be printed.
+                np_pin_sev="${np_pin_sev}$sev"$'\n'
+                if [ "$days" -gt "${np_pin_worst:-0}" ]; then np_pin_worst=$days; fi
+              fi
+              :
+            done < <(printf '%s\n' "$body" | awk -f "$AWK_PINS")
+            return 0
+          }
+
+          # ---- A3: run health (check 7) -----------------------------------
+          # The gap checks 3 and 5 structurally cannot see. Check 3 compares a
+          # lock file's declared compiler against the setup action pinned in
+          # the SAME file, so it passes perfectly on a workflow whose every
+          # run has failed for a month. Nothing in this sweep has ever read a
+          # run conclusion.
+          #
+          # Reports an ACTIVE gh-aw workflow that has not gone green in
+          # RUN_STALE_DAYS. `state != active` is excluded: a manually disabled
+          # workflow whose last run failed is not a live problem.
+          #
+          # The tally is also split by `agent_id` from the lock header, which
+          # is what makes the CAUSE legible without reading a single log.
+          RUN_STALE_DAYS=14  # a weekly cron must miss two runs; one is noise
+
+          # $1 repo  $2 visibility
+          check_run_health() {
+            local r="$1" vis="$2"
+            local id state path f hdr agent cver last conc when succ days
+            while IFS=$'\t' read -r id state path; do
+              f=${path##*/}
+              case "$f" in *.lock.yml) ;; *) continue ;; esac
+              if [ "$state" != active ]; then continue; fi
+
+              # A 404 here is its OWN finding: the Actions API still lists the
+              # workflow as active but the file is gone from the default
+              # branch. Calling such a record "failing for 110 days" would be
+              # wrong — there is nothing left to fail.
+              hdr=$(gh api "/repos/$ORG/$r/contents/$path" --jq '.content' 2>/dev/null \
+                    | base64 -d 2>/dev/null | sed -n '1,2p' || true)
+              if [ -z "$hdr" ]; then
+                health_bad=$((health_bad + 1))
+                if [ "$vis" = public ]; then
+                  health_rows="${health_rows}| ORPHAN | \`$r\` | \`$f\` | file absent from default branch | — | — |"$'\n'
+                else
+                  np_orphan=$(( ${np_orphan:-0} + 1 ))
+                fi
+                continue
+              fi
+              agent=$(printf '%s' "$hdr" | sed -n 's/.*"agent_id":"\([^"]*\)".*/\1/p' | sed -n 1p)
+              cver=$(printf '%s' "$hdr" | sed -n 's/.*"compiler_version":"\([^"]*\)".*/\1/p' | sed -n 1p)
+              compiler_seen="${compiler_seen}${cver:-unparsed}"$'\n'
+              repo_compiler="${repo_compiler}${r}"$'\t'"${cver:-unparsed}"$'\n'
+
+              last=$(gh api "/repos/$ORG/$r/actions/workflows/$id/runs?per_page=1" \
+                       --jq '[.workflow_runs[0].conclusion // "none",
+                              .workflow_runs[0].created_at // "-"] | @tsv' 2>/dev/null \
+                     || printf 'none\t-')
+              conc=$(printf '%s' "$last" | cut -f1)
+              when=$(printf '%s' "$last" | cut -f2)
+              if [ "$conc" = success ]; then
+                succ="$when"
+              else
+                # One extra call, only for a workflow that is not already
+                # green. `status=success` is the cheapest way to date the last
+                # green run, and it is what turns "last run failed" into "has
+                # not been green in N days" — the difference between a flake
+                # and a month of rot.
+                succ=$(gh api "/repos/$ORG/$r/actions/workflows/$id/runs?status=success&per_page=1" \
+                         --jq '.workflow_runs[0].created_at // "NEVER"' 2>/dev/null || echo NEVER)
+              fi
+              if [ "$succ" = NEVER ] || [ -z "$succ" ] || [ "$succ" = - ]; then
+                days=99999
+              else
+                days=$(( ( NOW - $(date -u -d "$succ" +%s) ) / 86400 ))
+              fi
+
+              if [ "$days" -lt "$RUN_STALE_DAYS" ]; then
+                agent_tally="${agent_tally}${agent:-unknown}"$'\t'"green"$'\n'
+              else
+                agent_tally="${agent_tally}${agent:-unknown}"$'\t'"not-green"$'\n'
+                health_bad=$((health_bad + 1))
+                if [ "$vis" = public ]; then
+                  if [ "$days" = 99999 ]; then
+                    health_rows="${health_rows}| STALE | \`$r\` | \`$f\` | $conc | never | ${agent:-?} |"$'\n'
+                  else
+                    health_rows="${health_rows}| STALE | \`$r\` | \`$f\` | $conc | ${succ:0:10} (${days}d) | ${agent:-?} |"$'\n'
+                  fi
+                  echo "::warning title=org-conformance-sweep::$r $f has not succeeded in ${days}d (last run: $conc, agent: ${agent:-?})"
+                else
+                  np_health=$(( ${np_health:-0} + 1 ))
+                  if [ "$days" = 99999 ]; then
+                    np_health_never=$(( ${np_health_never:-0} + 1 ))
+                  elif [ "$days" -gt "${np_health_worst:-0}" ]; then
+                    np_health_worst=$days
+                  fi
+                fi
+              fi
+              :
+            done < <(gh api "/repos/$ORG/$r/actions/workflows?per_page=100" --paginate \
+                       --jq '.workflows[] | [(.id|tostring), .state, .path] | @tsv' 2>/dev/null || true)
+            return 0
+          }
+
+          total=0 affected=0 unreadable=0 np_affected=0 np_unreadable=0
+          conf_rows="" conf_kinds=""
+          pin_rows="" nover_rows="" np_pin_sev="" np_pin_worst=0
+          pin_total=0 pin_nover=0 pin_bad=0
+          health_rows="" health_bad=0
+          np_health=0 np_health_never=0 np_health_worst=0 np_orphan=0
+          agent_tally="" compiler_seen="" repo_compiler=""
 
           for r in $repos; do
             skip=no
@@ -142,31 +483,60 @@ jobs:
               continue
             fi
 
+            vis=$(vis_of "$r")
             total=$((total + 1))
             findings=""
+            kinds=""
 
             # Establish readability first. A repo we cannot read is reported as
             # such — never counted as clean.
             if ! repo_readable "$r"; then
               unreadable=$((unreadable + 1))
-              echo "| \`$r\` | **UNREADABLE** — token lacks access; not assessed |" >> "$GITHUB_STEP_SUMMARY"
-              echo "::warning title=org-conformance-sweep::$r unreadable — not assessed"
+              if [ "$vis" = public ]; then
+                conf_rows="${conf_rows}| \`$r\` | **UNREADABLE** — token lacks access; not assessed |"$'\n'
+                echo "::warning title=org-conformance-sweep::$r unreadable — not assessed"
+              else
+                np_unreadable=$((np_unreadable + 1))
+              fi
               continue
             fi
             wf=$(ls_workflows "$r")
             [ -n "$wf" ] || continue
 
+            # One pass over the non-lock workflows. Previously security.yml was
+            # fetched twice (check 1 and check 4); the bodies are reused here by
+            # checks 1, 4 and 6, so the pin check adds no content API calls.
+            sec=""
+            uses_zima=no
+            for f in $wf; do
+              case "$f" in *.lock.yml) continue ;; *.yml|*.yaml) ;; *) continue ;; esac
+              wfbody=$(fetch "$r" ".github/workflows/$f")
+              [ -n "$wfbody" ] || continue
+              [ "$f" = security.yml ] && sec="$wfbody"
+              # 4. `zima` used as a LITERAL runs-on label without actionlint
+              #    declaring it. Match only the LITERAL array form: the
+              #    dynamic USE_SELF_HOSTED toggle embeds the label inside an
+              #    expression actionlint cannot evaluate, so it never errors on
+              #    those. Matching them would report repos that are fine.
+              #    No `break` here: the loop must run to completion so the pin
+              #    check below sees every caller file.
+              if printf '%s' "$wfbody" \
+                   | grep -qE 'runs-on:[[:space:]]*\[[^]]*\bzima\b'; then
+                uses_zima=yes
+              fi
+              # 6. Pin drift.
+              check_pins "$r" "$vis" "$f" "$wfbody"
+            done
+
             # 1. security.yml calling the org scan must grant `actions: read`,
             #    else the run is rejected at creation and produces no logs.
-            case " $wf " in
-              *" security.yml "*)
-                sec=$(fetch "$r" ".github/workflows/security.yml")
-                if printf '%s' "$sec" | grep -q 'security-scan\.yml' &&
-                   ! printf '%s' "$sec" | caller_grants_actions_read; then
-                  findings="${findings}security.yml caller job lacks effective \`actions: read\` (startup_failure); "
-                fi
-                ;;
-            esac
+            if [ -n "$sec" ]; then
+              if printf '%s' "$sec" | grep -q 'security-scan\.yml' &&
+                 ! printf '%s' "$sec" | caller_grants_actions_read; then
+                findings="${findings}security.yml caller job lacks effective \`actions: read\` (startup_failure); "
+                kinds="${kinds}security-caller-missing-actions-read"$'\n'
+              fi
+            fi
 
             locks=""
             for f in $wf; do
@@ -178,6 +548,7 @@ jobs:
               dep=$(fetch "$r" ".github/dependabot.yml")
               if [ -n "$dep" ] && ! printf '%s' "$dep" | grep -q 'github/gh-aw-actions\*'; then
                 findings="${findings}dependabot.yml missing \`github/gh-aw-actions*\` ignore; "
+                kinds="${kinds}dependabot-missing-gh-aw-ignore"$'\n'
               fi
 
               # 3. Lock files whose compiler disagrees with the pinned setup.
@@ -197,31 +568,17 @@ jobs:
                   | sed -n '1s/.*# //p' || true)
                 if [ -n "$cv" ] && [ -n "$bv" ] && [ "$cv" != "$bv" ]; then
                   findings="${findings}$f drift ($cv vs $bv); "
+                  kinds="${kinds}lock-compiler-vs-setup-drift"$'\n'
                 fi
               done
             fi
 
-            # 4. `zima` used as a LITERAL runs-on label without actionlint
-            #    declaring it. Match only the LITERAL array form: the
-            #    dynamic USE_SELF_HOSTED toggle in landing/resQ ci.yml embeds
-            #    the label inside an expression actionlint cannot evaluate, so
-            #    it never errors on those. Matching them would report repos
-            #    that are actually fine.
-            uses_zima=no
-            for f in $wf; do
-              case "$f" in *.lock.yml) continue ;; esac
-              wfbody=$(fetch "$r" ".github/workflows/$f")
-              if printf '%s' "$wfbody" \
-                   | grep -qE 'runs-on:[[:space:]]*\[[^]]*\bzima\b'; then
-                uses_zima=yes
-                break
-              fi
-            done
             if [ "$uses_zima" = yes ]; then
               al=$(fetch "$r" ".github/actionlint.yaml")
               [ -n "$al" ] || al=$(fetch "$r" ".github/actionlint.yml")
               if ! printf '%s' "$al" | grep -qE '^[[:space:]]*-[[:space:]]*zima[[:space:]]*$'; then
                 findings="${findings}uses \`zima\` without actionlint declaring it; "
+                kinds="${kinds}zima-undeclared"$'\n'
               fi
             fi
 
@@ -229,7 +586,7 @@ jobs:
             #    agnostic on purpose: no manifest is parsed, so this works the
             #    same for Cargo.toml, package.json, pyproject.toml and the rest.
             #    Catches a measured defect — two repos currently advertise a
-            #    version on their landing page that is BEHIND what shipped,
+            #    version on their repo front page that is BEHIND what shipped,
             #    because a backfill inserted old releases on top of newer ones.
             #    Uses git/refs/tags, not /tags: the latter paginates by name and
             #    silently under-reports (68 of 185 on the largest repo).
@@ -256,31 +613,141 @@ jobs:
                   | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
                 if [ "$newest" = "$top_tag" ]; then
                   findings="${findings}\`latest\` release is $rel_ver but $top_tag is tagged — the repo page advertises an older version than shipped; "
+                  kinds="${kinds}latest-release-behind-tag"$'\n'
                 fi
               fi
             fi
 
+            # 7. Run health.
+            check_run_health "$r" "$vis"
+
             if [ -n "$findings" ]; then
-              affected=$((affected + 1))
-              echo "| \`$r\` | ${findings%; } |" >> "$GITHUB_STEP_SUMMARY"
-              echo "::warning title=org-conformance-sweep::$r — ${findings%; }"
+              if [ "$vis" = public ]; then
+                affected=$((affected + 1))
+                conf_rows="${conf_rows}| \`$r\` | ${findings%; } |"$'\n'
+                echo "::warning title=org-conformance-sweep::$r — ${findings%; }"
+              else
+                # Tier 2: the kind of finding, never the repo it is in.
+                np_affected=$((np_affected + 1))
+                conf_kinds="${conf_kinds}${kinds}"
+              fi
             fi
           done
 
-          if [ "$affected" -eq 0 ] && [ "$unreadable" -eq 0 ]; then
-            echo "| _none_ | all $total repos clean |" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          # ---- Report ------------------------------------------------------
+          # DISCLOSURE: this repo is public, so $GITHUB_STEP_SUMMARY and every
+          # annotation are world-readable. Public-visibility repos get full
+          # detail — every fact is already public, and withholding it would
+          # cost actionability for no benefit. Non-public repos get COUNTS AND
+          # SEVERITIES ONLY: no name, no file name, no SHA, no workflow name,
+          # no per-repo row. The aggregate cross-cuts (agent, compiler) are
+          # name-free by construction and so safely span both tiers.
+          tally() {
+            # Count a newline-separated list without letting an empty list
+            # abort the script under `set -e -o pipefail`.
+            printf '%s\n' "$1" | grep . | sort | uniq -c \
+              | sort -rn | awk '{printf "| %s | %s |\n", $2, $1}' || true
+          }
           {
+            echo "## Org CI-configuration sweep"
             echo
-            echo "Scanned **$total** repos — **$affected** with findings, **$unreadable** unreadable."
+            echo "Token: \`$token_used\`. Enumeration complete: **$enum_pub** public + **$enum_priv** non-public = **$((enum_pub + enum_priv))** repositories (org declares $dec_pub + $dec_priv). Scanned **$total** non-archived."
+            echo
+            echo "Pin-drift and run-health findings below are **reported, not gated** — see the follow-up in the PR that introduced them. Only an incomplete enumeration fails this job."
+            echo
+            echo "### Conformance checks 1-5 — public repositories"
+            echo
+            echo "| repo | finding |"
+            echo "| --- | --- |"
+            if [ -n "$conf_rows" ]; then printf '%s' "$conf_rows"; else echo "| _none_ | all $enum_pub public repos clean |"; fi
+            echo
+            echo "### Conformance checks 1-5 — non-public repositories (aggregate; detail withheld, this log is public)"
+            echo
+            echo "**$np_affected** of **$enum_priv** non-public repositories have at least one finding; **$np_unreadable** were unreadable. By kind:"
+            echo
+            echo "| finding kind | occurrences |"
+            echo "| --- | --- |"
+            if [ -n "$conf_kinds" ]; then tally "$conf_kinds"; else echo "| _none_ | 0 |"; fi
+            echo
+            echo "### Check 6 — pin drift, public repositories"
+            echo
+            echo "\`ahead\` is commits to the whole repo; \`stale effective\` is the workflows actually changed since the pin, **including the siblings \`required.yml\` pulls in via \`./\`**, which GitHub resolves at the caller's pinned ref. \`stale-30d\` at $PIN_WARN_DAYS days, \`STALE-90d\` at $PIN_FAIL_DAYS."
+            echo
+            echo "| sev | repo | caller | pin | pinned at | days | ahead | stale effective |"
+            echo "| --- | --- | --- | --- | --- | --- | --- | --- |"
+            if [ -n "$pin_rows" ]; then printf '%s' "$pin_rows"; else echo "| — | _none_ | | | | | | |"; fi
+            echo
+            echo "### Check 6 — pin drift, non-public repositories (aggregate)"
+            echo
+            echo "| severity | pins |"
+            echo "| --- | --- |"
+            if [ -n "$np_pin_sev" ]; then tally "$np_pin_sev"; else echo "| _none_ | 0 |"; fi
+            echo
+            echo "Worst non-public pin age: **${np_pin_worst:-0}** days."
+            echo
+            echo "### Missing version comment"
+            echo
+            echo "**$pin_nover of $pin_total** pins carry no trailing \`# vX.Y.Z\`, which \`docs/standards/05-workflow-releases.md\` clause 2 requires. Note that this repo currently has **0** tags and **0** releases, so there is no version a pin could name — the contract cannot be met until this repo tags, and this is a producer-side gap, not a consumer failure. Detail for public repos only:"
+            echo
+            echo "| repo | caller | pin |"
+            echo "| --- | --- | --- |"
+            if [ -n "$nover_rows" ]; then printf '%s' "$nover_rows"; else echo "| _none_ | | |"; fi
+            echo
+            echo "### Check 7 — active gh-aw workflows not green in $RUN_STALE_DAYS days, public repositories"
+            echo
+            echo "No earlier check reads a run conclusion, so this class of failure was invisible: checks 3 and 5 pass perfectly on a workflow whose every run has failed for a month."
+            echo
+            echo "| sev | repo | workflow | last run | last green | agent |"
+            echo "| --- | --- | --- | --- | --- | --- |"
+            if [ -n "$health_rows" ]; then printf '%s' "$health_rows"; else echo "| — | _none_ | | | | |"; fi
+            echo
+            echo "Non-public repositories (aggregate): **${np_health:-0}** stale, **${np_health_never:-0}** never green, **${np_orphan:-0}** orphaned records; worst **${np_health_worst:-0}** days."
+            echo
+            echo "### Run health by agent (all repositories, aggregate — no names)"
+            echo
+            echo "Where the cause is legible without reading a single log."
+            echo
+            echo "| agent | green | not green |"
+            echo "| --- | --- | --- |"
+            printf '%s\n' "$agent_tally" | grep . | sort | uniq -c \
+              | awk '{t[$2"|"$3]=$1; a[$2]=1} END{for(k in a) printf "| %s | %s | %s |\n", k, (t[k"|green"]+0), (t[k"|not-green"]+0)}' || true
+            echo
+            echo "### gh-aw compiler spread (aggregate — no names)"
+            echo
+            echo "Check 3 only tests a lock file against itself, so it cannot see a cross-repo spread."
+            echo
+            echo "| compiler | lock files |"
+            echo "| --- | --- |"
+            if [ -n "$compiler_seen" ]; then tally "$compiler_seen"; else echo "| _none_ | 0 |"; fi
+            echo
+            distinct=$(printf '%s\n' "$compiler_seen" | grep . | sort -u | grep -c . || echo 0)
+            multi=$(printf '%s\n' "$repo_compiler" | grep . | sort -u | cut -f1 | uniq -d | grep -c . || echo 0)
+            echo "Distinct versions in use: **${distinct:-0}**. Repositories with more than one version in-tree: **${multi:-0}**."
           } >> "$GITHUB_STEP_SUMMARY"
 
-          echo "sweep: $affected/$total with findings, $unreadable unreadable"
+          echo "sweep: $affected/$enum_pub public with findings, $unreadable unreadable; $np_affected non-public with findings"
+          echo "sweep: pins=$pin_total no-version=$pin_nover drifting=$pin_bad; run-health findings=$health_bad"
 
+          # GATE. Deliberately narrow for this cycle.
+          #
+          # The completeness assertion above has ALREADY exited non-zero if the
+          # enumeration was short: an incomplete sweep is an error, never a
+          # clean report, and that is the one thing that must always hard-fail.
+          #
+          # Pin drift (check 6) and run health (check 7) are REPORT-ONLY here.
+          # 13 of 17 public pins are already past PIN_FAIL_DAYS and 33 agentic
+          # workflows are already not green, so gating on them would make this
+          # job red on arrival — and a job that is red on arrival gets muted,
+          # which is exactly how this rotted the first time. They are therefore
+          # excluded from the gate below on purpose. FOLLOW-UP: once the pin
+          # backlog is cleared and the agentic-workflow failures are resolved,
+          # add `|| [ "$pin_bad" -gt 0 ] || [ "$health_bad" -gt 0 ]` here and
+          # flip fail-on-findings to default true.
+          #
           # Unreadable repos are a failure of the sweep itself, not a clean
           # result, so they count toward the gate.
           if [ "${FAIL_ON_FINDINGS:-false}" = "true" ] &&
-             { [ "$affected" -gt 0 ] || [ "$unreadable" -gt 0 ]; }; then
-            echo "::error title=org-conformance-sweep::$affected with findings, $unreadable unreadable."
+             { [ "$affected" -gt 0 ] || [ "$np_affected" -gt 0 ] || [ "$unreadable" -gt 0 ]; }; then
+            echo "::error title=org-conformance-sweep::$affected public + $np_affected non-public with findings, $unreadable unreadable."
             exit 1
           fi
