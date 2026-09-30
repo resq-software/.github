@@ -66,32 +66,65 @@ issue and PR that carried it.
 
 ### What the base contains, and why
 
-46 labels in eight axes. A name is in the base when automation depends on its
-exact string in **more than one** repo, or when it is already live in 12+ of
-the org's 21 repos and completes an axis the base already carries. Repo-local
-automation — Dependabot ecosystem labels, the `area:*` / `pkg:*` / `crate:*`
-namespaces, single-repo agentic labels — stays in the repo's own `labels.yml`.
-The file's own header states the rule and the per-axis evidence.
+46 labels in eight axes. A name is in the base when **automation depends on its
+exact string in three or more repositories**, or when it is **already live in 12
+or more** — a clear majority of the org — with a narrow allowance for a name
+below 12 that completes an axis already carried. Namespaced names (`area:*`,
+`pkg:*`, `crate:*`, `service:*`, `pipeline:*`, `lib:*`, `tool:*`) and aliases
+for a concept the base already names once (`deps`, `chore`) stay in the repo's
+own `labels.yml` whatever their count. The file's own header states the rule,
+the per-axis evidence, and the four names that sit just under the three-repo
+bar so the exclusion is arguable rather than silent.
+
+#### Population — read this before quoting any number below
+
+Every count here was measured on **2026-09-30, 14:30–14:39 UTC**, over every
+repository this org owns, public and not, **minus the temporary forks the
+security-advisory workflow creates**. Those forks hold no labels and no
+`labels.yml`; a census that walks repository files over-counts them and one
+that reads the org's declared private-repo counter under-counts them, which is
+how the previous revision's figures drifted. Enumerate, exclude, then count —
+the reproduction command is in the header of
+[`labels.base.yml`](./labels.base.yml).
+
+Live label state moves: the "names carrying more than one colour" figure was 26
+at 14:30Z and 25 at 14:37Z. Re-measure before quoting; do not adjust a stale
+number.
+
+| measured over that population | 2026-09-30T14:30Z |
+| --- | --- |
+| label rows live across the org | 859 |
+| distinct label names | 220 |
+| names existing in exactly one repo | 132 |
+| names live in 12+ repositories | 35 |
+| names carrying more than one colour | 25 |
+
+#### What adoption costs and changes
 
 Adopting the base means **removing** the overlapping names from a repo's
-`labels.yml`, or the concatenation bug above fires. Across the 13 repos that
-carry a `labels.yml` today that is 386 declarations to delete.
+`labels.yml`, or the concatenation bug above fires. **12** repos carry a
+`labels.yml` today, and they declare **359** names that the base also declares.
+Those 359 declarations have to go.
 
-What adoption does to live labels, measured against all 21 repos' current
-state — every one of the 46 names is already live somewhere, so the base
-**creates no new name anywhere in the org**; it only normalises:
+Effect on live labels if every repo adopts. Every one of the 46 names is
+already live somewhere, so the base **introduces no new name** to the org — but
+it is not a no-op: it creates **342 label rows** in repos that do not carry
+those names yet.
 
-| effect on an existing live label | count |
+| effect | count |
 | --- | --- |
-| already identical — no change | 335 |
-| description rewritten, colour kept | 123 |
-| **recoloured** | **119** |
+| existing row already identical — no change | 335 |
+| existing row, description rewritten, colour kept | 123 |
+| existing row **recoloured** | **120** |
+| **rows created** (name already used elsewhere in the org) | **342** |
+| **names new to the org** | **0** |
 
-The 119 recolours are the intended effect: `size/*` alone carries four
-different colours across the org, and `javascript`, `github-actions`,
-`A-DevOps`, `P1: high` and `P3: low` each carry two or more. Same name, same
-meaning, different colour per repo is unmanaged drift, and normalising it is
-name-safe — no automation reads a colour.
+The 120 recolours are the intended effect. 15 of the 25 names that carry more
+than one colour org-wide are in this file: all six of `size/*` (four colours
+each), `A-DevOps` (five), and `javascript`, `github-actions`, `P1: high`,
+`P3: low`, `refactor`, `security`, `ignore-for-release`, `skip-changelog`.
+Same name, same meaning, different colour per repo is unmanaged drift, and
+normalising it is name-safe — no automation reads a colour.
 
 See [`docs/standards/02-languages.md`](../docs/standards/02-languages.md) for the
 per-language rules these encode, and the [standards index](../docs/standards/)

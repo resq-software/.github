@@ -6,28 +6,84 @@
 # config/README.md, section "Issue labels (label-sync)".
 #
 # ---------------------------------------------------------------------------
+# Population — what every count below was measured over
+# ---------------------------------------------------------------------------
+# Measured 2026-09-30T14:30-14:39Z. Every figure in this file is a count taken
+# then, not an estimate, and label state moves: the "names carrying more than
+# one colour" figure below was 26 at 14:30Z and 25 at 14:37Z. Re-measure before
+# quoting any of it; do not adjust a stale number.
+#
+# The population is every repository this org owns — public and not — as
+# `GET /orgs/<org>/repos?type=all --paginate` returns them, MINUS the temporary
+# forks the security-advisory workflow creates. Those forks are scratch space,
+# not repositories: their label API returns 404, they hold no labels.yml, and
+# counting them is exactly what put the previous revision's figures out. Any
+# census that walks repository FILES will over-count them and any census that
+# reads the org's declared private-repo counter will under-count them, so
+# neither is usable on its own — enumerate, exclude, then count.
+#
+# Reproduce:
+#   gh api '/orgs/<org>/repos?type=all&per_page=100' --paginate \
+#     --jq '.[].name' | grep -viE '<advisory-fork pattern>' \
+#     | while read -r r; do
+#         gh api "/repos/<org>/$r/labels?per_page=100" --paginate \
+#           --jq ".[] | [\"$r\", .name, .color] | @tsv"
+#       done
+#
+# Census over that population, 2026-09-30T14:30Z:
+#   859  label rows live across the org
+#   220  distinct label names
+#   132  of those names exist in exactly ONE repo — the shadow taxonomy this
+#        file exists to stop growing
+#    35  names are live in 12 or more repositories
+#    25  names carry more than one colour across repos (26 seven minutes
+#        earlier). 15 of the 25 are in this file, so adopting it settles them.
+#
+# ---------------------------------------------------------------------------
 # Inclusion rule
 # ---------------------------------------------------------------------------
-# A name belongs here when it meets EITHER test, and is ORG-WIDE under both:
+# A name belongs here when it passes (1) or (2), subject to (3):
 #
-#   (1) Automation depends on the exact string — it is hard-coded in a
-#       workflow, labeler.yml, gh-aw front-matter, Dependabot `labels:`, or a
-#       .github/release.yml category — in MORE THAN ONE repository.
+#   (1) AUTOMATION depends on the exact string in THREE OR MORE repositories —
+#       hard-coded in a workflow, .github/labeler.yml, gh-aw front-matter,
+#       Dependabot `labels:`, or a .github/release.yml category.
 #
-#   (2) Convergent adoption — the name is already live in 12 or more of the
-#       org's 21 repositories AND completes an axis this file already carries.
+#   (2) CONVERGENT ADOPTION — the name is already live in 12 or more
+#       repositories, a clear majority of the org. A name below 12 is admitted
+#       only to complete an axis already carried under (1) or (2), because a
+#       PARTIAL ladder is worse than none: a state, priority or size axis that
+#       stops halfway forces every repo to invent the missing rungs, which is
+#       how 132 single-repo names accumulated. Three names enter this way:
+#       size/XL (live in 10), C-Chore and C-Testing (live in 9, both also
+#       title-mapped).
 #
-# Repo-LOCAL automation stays in the repo's own labels.yml. Dependabot
-# ecosystem labels (`deps`, `chore`, `typescript`, `rust`, `python`, `dotnet`,
-# `solana`, `ci`), the `area:*` / `pkg:*` / `crate:*` / `service:*` /
-# `pipeline:*` / `lib:*` / `tool:*` namespaces, and single-repo agentic labels
-# (`automation`, `roadmap`) all fail the org-wide qualifier by design.
+#   (3) ORG-WIDE QUALIFIER. Two families stay in the repo's own labels.yml
+#       however many repos use them:
+#         - NAMESPACED names — `area:*`, `pkg:*`, `crate:*`, `service:*`,
+#           `pipeline:*`, `lib:*`, `tool:*`. They name a path inside one repo.
+#           `area:tests` is the only one at 3+ repos and is excluded here.
+#         - ALIASES for a concept the base already names once: `deps` (6 repos,
+#           Dependabot; duplicates `dependencies`) and `chore` (6 repos,
+#           Dependabot; duplicates `C-Chore`). The base carries one name per
+#           concept. These should eventually be retired, not promoted.
 #
-# Test (2) admits names with no attachments anywhere — the whole S-* family is
-# declared in 12 repos and has never been applied to an issue. They are kept
-# because a PARTIAL ladder is worse than none: a state, priority or size axis
-# that stops halfway forces every repo to invent the missing rungs, which is
-# how the 221-name shadow taxonomy grew. If the org retires S-*, it is deleted
+# THE THRESHOLD IN (1) IS THREE, AND IT IS A DECISION, NOT AN ACCIDENT.
+# At "more than one repo" the following would also qualify, and are listed here
+# with their measured counts so the exclusion is visible and arguable:
+#   ci           2 repos — Dependabot `labels:` in one AND a gh-aw
+#                safe-outputs.create-issue label in another. It is NOT a
+#                Dependabot-only name; the previous revision said so and was
+#                wrong. It is live in ZERO repos (see the note at the foot).
+#   A-Examples   2 repos — .github/labeler.yml path rule
+#   A-Release    2 repos — .github/labeler.yml path rule
+#   A-Scripts    2 repos — .github/labeler.yml path rule
+# Two repos sharing a path convention is a coincidence; three is a convention.
+# A reviewer who prefers the lower bar should say so — those four names move in
+# without any other change to this file.
+#
+# Test (2) admits names with no automation attached anywhere. The whole S-*
+# family is declared in 12 repos and has never been applied to a single issue;
+# it is kept as a complete ladder, and if the org retires S-*, it is deleted
 # here once instead of in twelve files.
 #
 # Frequency of *declaration* is not on its own evidence of anything, and the
@@ -40,14 +96,18 @@
 # name appearing in both this file and a repo's own labels.yml is emitted
 # twice and applied by two concurrent, conflicting API calls under Promise.all.
 # There is no precedence and no last-one-wins. Per-repo files must stay
-# DISJOINT from this one; they hold additions only.
-
+# DISJOINT from this one; they hold additions only. 12 repos carry a
+# .github/labels.yml today and they declare 359 names that appear below;
+# adopting the base means deleting those 359 declarations.
 # --- Change type (C-*) ---------------------------------------------------------
-# Applied automatically from the conventional-commit title prefix by
-# .github/workflows/conventional-title-labeler.yml (10 repos map exactly these
-# seven), and consumed as changelog categories by .github/release.yml (6 repos).
-# C-Breaking-Change and C-Security are not title-mapped; they are live in 12
-# repos each and complete the axis.
+# Applied from the conventional-commit title prefix by
+# .github/workflows/conventional-title-labeler.yml — 9 repos, each mapping
+# exactly the same seven names — and consumed as changelog categories by
+# .github/release.yml (6 repos). C-Documentation, C-Chore and C-Testing are
+# also .github/labeler.yml path rules (10, 2 and 6 repos).
+# C-Breaking-Change is title-applied in exactly ONE repo, on the Conventional
+# Commits `!` marker; C-Security is applied by nothing anywhere. Both are live
+# in 12 repos and enter under rule (2), completing the axis.
 - name: "C-Feature"
   color: "a2eeef"
   description: "New feature or request"
@@ -77,8 +137,9 @@
   description: "Security vulnerability or hardening"
 
 # --- State (S-*) ---------------------------------------------------------------
-# Workflow state, applied by hand. Declared in 12 repos, zero attachments
-# org-wide — kept under test (2) as a complete ladder. See the note above.
+# Workflow state, applied by hand. Declared in 12 repos, zero automation
+# anywhere, zero attachments org-wide — kept under rule (2) as a complete
+# ladder. See the note above.
 - name: "S-Needs-Triage"
   color: "ededed"
   description: "Needs initial assessment"
@@ -96,9 +157,11 @@
   description: "Approved and ready to be merged"
 
 # --- Priority (P0-P3) ----------------------------------------------------------
-# P0 and P1 are stale-bot exemptions (exempt-issue-labels). All four are live
-# in 12-13 repos; P1 and P3 currently carry two different colours across the
-# org, which this file normalises.
+# Live in 12-13 repos, so all four enter under rule (2). Their automation
+# footprint is ONE repo — P0 and P1 are actions/stale `exempt-issue-labels`
+# there — which is below the three-repo bar in rule (1); the previous revision
+# implied a wider footprint than exists. P1 and P3 each carry two colours
+# across the org today (d93f0b vs ededed, 0e8a16 vs ededed).
 - name: "P0: critical"
   color: "b60205"
   description: "Outage or data loss - drop everything"
@@ -113,10 +176,14 @@
   description: "Minor impact - fix when convenient"
 
 # --- Change size (size/*) ------------------------------------------------------
-# Applied by pascalgn/size-label-action v0.5.7. These six are the action's
-# defaultSizes buckets (0/10/30/100/500/1000 changed lines) — no repo overrides
-# `sizes`, so exactly these six names are reachable and all six are required.
-# Five of the six carry 4 different colours across the org today.
+# Applied by pascalgn/size-label-action, which 13 repos run: 11 pinned to
+# 56b489b027932ec0cf60438a1a5f1a19c8fc71ff, 2 to the mutable tag v0.5.7 (the
+# tag resolves to that same commit today — worth pinning). These six names are
+# the action's `defaultSizes` buckets (0/10/30/100/500/1000 changed lines),
+# read from index.js at that SHA, and no repo passes a `sizes` input, so
+# exactly these six are reachable and all six are required.
+# ALL SIX carry four different colours across the org today — the previous
+# revision said five, which was wrong.
 - name: "size/XS"
   color: "0e8a16"
   description: "Extra-small change (under 10 lines)"
@@ -137,9 +204,13 @@
   description: "Massive change (1000+ lines) - consider splitting"
 
 # --- Area (A-*) ----------------------------------------------------------------
-# Path-derived, from .github/labeler.yml. Only these two are org-wide:
+# Path-derived, from .github/labeler.yml — 14 repos run actions/labeler.
 # A-DevOps is a labeler rule in 10 repos and a release.yml category in 6;
-# A-Build is a labeler rule in 8. Every other A-* is repo-local.
+# A-Build is a labeler rule in 7 (not 8). Every other A-* falls below the
+# three-repo bar: A-Examples, A-Release and A-Scripts at 2 repos each, and
+# A-CI, A-Config, A-Docker, A-Effect, A-Ports, A-Protos, A-Samples,
+# A-Storybook, A-Templates and A-Vendor at 1. All stay repo-local.
+# A-DevOps carries FIVE different colours across the org today.
 - name: "A-DevOps"
   color: "1d76db"
   description: "CI/CD, workflows, actions, and git hooks"
@@ -148,10 +219,12 @@
   description: "Build configuration and toolchain"
 
 # --- Dependency and release automation -----------------------------------------
-# dependencies and github-actions are applied by Dependabot `labels:` (7 and 6
-# repos); dependencies is also a release.yml category in 6. javascript is a
-# Dependabot label in 3 repos and live in 12 with two different colours.
-# ignore-for-release and skip-changelog are release.yml `exclude.labels` in 6.
+# dependencies is a Dependabot `labels:` entry in 6 repos, a release.yml
+# category in 6 and a labeler rule in 1 — 12 repos in all. github-actions is a
+# Dependabot label in 5 (not 6). javascript is a Dependabot label in only 2,
+# which is below the rule (1) bar; it enters under rule (2), live in 12 repos
+# with two colours (f1e05a and 168700). ignore-for-release and skip-changelog
+# are release.yml `exclude.labels` in 6 repos and carry four colours each.
 - name: "dependencies"
   color: "0366d6"
   description: "Automated dependency updates"
@@ -169,12 +242,15 @@
   description: "Omit this PR from the changelog"
 
 # --- Lifecycle and triage ------------------------------------------------------
-# stale, pinned and security are read by actions/stale (stale-*-label and
-# exempt-*-labels) in 3 repos. needs-triage and refactor are hard-coded in the
-# duplicate-code-detector gh-aw front-matter in 13 repos; refactor exists in
-# only 7 of those 13, and in 6 of the 7 it is grey and undescribed because a
-# bot minted it. agentic-workflows is live in 13 repos, grey and undescribed in
-# every one, and declared in none — the clearest case of a bot-minted name.
+# stale is applied by actions/stale in 3 repos; pinned and security are read
+# by it as exemptions in those same 3 (security is additionally a gh-aw
+# create-issue label in 1). needs-triage and refactor are hard-coded in the
+# duplicate-code-detector gh-aw front-matter in 12 repos (not 13); refactor is
+# live in only 7 of those 12, and in 6 of the 7 it is grey ededed with no
+# description, because a bot minted it rather than a config declaring it.
+# agentic-workflows is live in 13 repos, ededed and undescribed in every single
+# one and declared in none; it enters under rule (2) and is the clearest case
+# of a bot-minted name.
 - name: "needs-triage"
   color: "d876e3"
   description: "Awaiting first maintainer review"
@@ -195,7 +271,7 @@
   description: "Security-relevant; exempt from the stale bot"
 
 # --- GitHub defaults -----------------------------------------------------------
-# Created by GitHub on every new repository and present in 19-20 of 21. They
+# Created by GitHub on every new repository; live in 19 or 20 repos each. They
 # cannot be prevented and delete-other-labels is false, so they are declared
 # here to give them one description rather than left to drift.
 - name: "bug"
@@ -225,3 +301,16 @@
 - name: "wontfix"
   color: "ffffff"
   description: "This will not be worked on"
+
+# ---------------------------------------------------------------------------
+# Known gap this file does NOT close
+# ---------------------------------------------------------------------------
+# Three names are referenced by automation and live in ZERO repositories, so
+# the automation that names them mints a grey, undescribed label the first time
+# it fires: `ci` (2 repos — Dependabot `labels:` in one, a gh-aw
+# safe-outputs.create-issue label in another), `automation` (1 repo, gh-aw) and
+# `roadmap` (1 repo, actions/stale `exempt-issue-labels` — an exemption that
+# can never match). Declaring them here would only paper over it. The agentic
+# triage workflows can still mint arbitrary names; `refactor` and
+# `agentic-workflows` above are the evidence. That wants fixing before
+# convergence, or the single-repo taxonomy simply regrows.
