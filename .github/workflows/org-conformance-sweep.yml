@@ -1620,10 +1620,25 @@ jobs:
               #    here. An UNREADABLE one is not the same thing and must not
               #    share its silence.
               dep=""
+              dep_rc=0
               if dep_out=$(fetch "$r" ".github/dependabot.yml"); then
                 dep="$dep_out"
-              elif [ "$?" -eq 2 ]; then
-                note_unassessed "$r" "$vis" "check 2 (dependabot gh-aw ignore)" "$(gh_why)" "$(gh_detail)"
+              else
+                dep_rc=$?
+                if [ "$dep_rc" -eq 2 ]; then
+                  note_unassessed "$r" "$vis" "check 2 (dependabot gh-aw ignore)" "$(gh_why)" "$(gh_detail)"
+                fi
+              fi
+              # The same third outcome check 3 records below, and deliberately
+              # the same wording, so all four fetch() consumers agree on what
+              # an undecodable entry means. Gated on rc 0: rc 1 is a genuine
+              # 404, i.e. the repo really has no dependabot.yml, which is a
+              # legitimate answer and must stay silent. This was the one
+              # fetch() consumer of four with no such branch, so a 200 that
+              # carried no file content left dep empty and the check reported
+              # nothing at all.
+              if [ "$dep_rc" -eq 0 ] && [ -z "$dep" ]; then
+                note_unassessed "$r" "$vis" "check 2 (dependabot gh-aw ignore)" "read succeeded (HTTP 200) but the entry carries no file content — an empty file, a symlink or a submodule"
               fi
               if [ -n "$dep" ] && ! printf '%s' "$dep" | grep -q 'github/gh-aw-actions\*'; then
                 findings="${findings}dependabot.yml missing \`github/gh-aw-actions*\` ignore; "
@@ -1731,10 +1746,22 @@ jobs:
             #    answer and correctly produces no finding. A 403 or a 5xx is
             #    not an answer, and used to produce no finding either.
             latest_rel=""
-            if rel_out=$(gh_read "/repos/$ORG/$r/releases/latest" --jq '.tag_name'); then
+            rel_rc=0
+            # `// ""` for the same reason fetch() carries it: a JSON null
+            # prints as the literal string "null", which is not empty, so
+            # every downstream emptiness guard silently fails to fire.
+            if rel_out=$(gh_read "/repos/$ORG/$r/releases/latest" --jq '.tag_name // ""'); then
               latest_rel="$rel_out"
-            elif [ "$?" -eq 2 ]; then
-              note_unassessed "$r" "$vis" "check 5 (latest release vs highest tag)" "$(gh_why)" "$(gh_detail)"
+            else
+              rel_rc=$?
+              if [ "$rel_rc" -eq 2 ]; then
+                note_unassessed "$r" "$vis" "check 5 (latest release vs highest tag)" "$(gh_why)" "$(gh_detail)"
+              fi
+            fi
+            # rc 1 here is a genuine 404 — the repo has no releases — and is a
+            # real answer. A 200 whose tag_name is absent or null is not.
+            if [ "$rel_rc" -eq 0 ] && [ -z "$latest_rel" ]; then
+              note_unassessed "$r" "$vis" "check 5 (latest release vs highest tag)" "read succeeded (HTTP 200) but the latest release carries no tag_name"
             fi
             rel_ver=$(printf '%s' "$latest_rel" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$' || true)
             if [ -n "$rel_ver" ]; then
@@ -1754,6 +1781,12 @@ jobs:
               top_tag=""
               if ! tag_refs=$(gh_read "/repos/$ORG/$r/git/refs/tags" --paginate --jq '.[].ref'); then
                 note_unassessed "$r" "$vis" "check 5 (latest release vs highest tag)" "$(gh_why)" "$(gh_detail)"
+              elif [ -z "$tag_refs" ]; then
+                # The comment above states the premise: there IS a latest
+                # release here, so the repo has tags. An empty listing at rc 0
+                # contradicts that, so it is an anomaly to record rather than a
+                # quiet "no tags" — which is what it used to become.
+                note_unassessed "$r" "$vis" "check 5 (latest release vs highest tag)" "read succeeded (HTTP 200) but the tag listing came back empty, while a latest release exists"
               else
                 top_tag=$(printf '%s\n' "$tag_refs" \
                   | sed 's|^refs/tags/||' \
