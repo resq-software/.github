@@ -95,26 +95,56 @@ from it now means clean, not silent.
 Completeness is asserted in one of two modes, and the summary says which one
 ran. The org's `public_repos` field is public, so the public side is always
 checked strictly against it. The non-public side depends on
-`total_private_repos`, which is an **organization-administration** field — it
-sits in the owner-only block of the org object alongside `plan` and
-`disk_usage`, and it is *not* a membership field. The read-only token above
-therefore does not see it, and that alone is not a failure: the sweep reports
-the non-public side as **UNVERIFIED**, corroborates the enumeration against an
-independent GraphQL listing, and refuses to continue if it enumerated no
-non-public repositories at all — which is exactly the 2026-09-28
-public-only-token configuration. Adding **Organization administration: Read**
-to the token upgrades that side to **VERIFIED** and restores the strict
-shortfall arithmetic. A partial non-public *grant* is only detectable in
-VERIFIED mode; that limitation is printed in the summary rather than papered
-over.
+`total_private_repos`, which sits in the owner-only block of the org object
+alongside `plan` and `disk_usage`.
 
-Run health is scored against each workflow's own `on:` block, not a fixed
-wall-clock window: the window is two missed fires of the workflow's shortest
-cron interval, floored at 14 days, so a weekly cron lands on exactly 14 days
-and a monthly cron gets 60. A workflow with no schedule is **not** judged on
-elapsed days at all — there is no cadence to be late against — and a workflow
-that has never run is only a finding when it is scheduled and already older
-than its own window.
+**What gates that field is not established, and this document previously
+claimed otherwise.** An earlier revision asserted it is an
+*organization-administration* field and *not* a membership field. Nobody
+verified that. What was actually measured, against this org on 2026-09-29:
+
+| token belongs to | scopes | `total_private_repos` |
+| --- | --- | --- |
+| a user who is not a member of the org | `repo`, `read:org` | absent |
+| a user who is not a member of the org | `repo`, `read:org` | absent |
+| a user who is an org **owner** | `repo`, `read:org` | present |
+| a user who is an org **owner** | `admin:org`, `repo`, ... | present |
+
+So it is **not** the `admin:org` scope that exposes it — a `read:org` token
+belonging to an org owner sees it. Whether the discriminator is plain org
+membership or owner-level privilege could not be separated: no non-owner
+member token was available, and no fine-grained token was available either, so
+the advice to add **Organization administration: Read** to a fine-grained
+token is a suggestion, not a verified mapping.
+
+The gate therefore has two modes, which is all the sweep depends on. When the
+field is readable, the non-public side is checked strictly against it
+(**VERIFIED**). When it is not, the sweep reports that side as **UNVERIFIED**,
+corroborates the enumeration against an independent GraphQL listing, and
+refuses to continue if it enumerated no non-public repositories at all — which
+is exactly the 2026-09-28 public-only-token configuration. A partial
+non-public *grant* is only detectable in VERIFIED mode; that limitation is
+printed in the summary rather than papered over.
+
+Run health asks two independent questions, and only one of them involves
+cadence:
+
+* **Did its last run fail?** Asked of every workflow, scheduled or not.
+  Nothing about a workflow being event-driven makes a red run acceptable, so
+  this is a finding regardless of cadence (`FAILING`, or `NEVER-GREEN` when it
+  has never once succeeded).
+* **Is it overdue against its own schedule?** Scored against the workflow's
+  own `on:` block, not a fixed wall-clock window: the window is two missed
+  fires of its shortest cron interval, floored at 14 days, so a weekly cron
+  lands on exactly 14 days and a monthly cron gets 60 (`STALE`). A workflow
+  with no schedule is **not** judged on elapsed days at all — there is no
+  cadence to be late against.
+
+Cadence therefore controls only whether *elapsed time* counts against a
+workflow. An on-demand workflow with a failing last run is reported; an
+on-demand workflow that has simply not been invoked recently is not. A
+workflow that has never run is only a finding when it is scheduled and already
+older than its own window.
 
 What it still does not check: whether a pinned workflow is *behind a release*
 (there are none), and whether the drift it finds ever gets fixed.

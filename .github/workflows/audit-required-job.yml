@@ -119,10 +119,33 @@ jobs:
           # `public_repos` is a public field on the org object. Archived repos
           # are excluded from the audit but INCLUDED in that count, so the
           # comparison is made against the unfiltered enumeration.
-          # `total_private_repos` is an organization-ADMINISTRATION field, not
-          # a membership field: a correctly scoped read-only token does not see
-          # it, so its absence is reported as UNVERIFIED rather than treated as
-          # a failure or, worse, as a pass.
+          #
+          # `total_private_repos` sits in the owner-only block of the org
+          # object, next to `plan` and `disk_usage`. WHAT GATES IT WAS NOT
+          # ESTABLISHED. An earlier revision of this comment asserted it is
+          # "an organization-ADMINISTRATION field, not a membership field";
+          # nobody verified that, and the one measurement available refutes
+          # the scope half of it. Measured 2026-09-29 against this org:
+          #
+          #   token                       scopes                    field
+          #   non-member user             repo, read:org            ABSENT
+          #   non-member user             repo, read:org            ABSENT
+          #   org OWNER, no admin:org     repo, read:org            PRESENT
+          #   org OWNER, with admin:org   admin:org, repo, ...      PRESENT
+          #
+          # So it is NOT the `admin:org` OAuth scope that exposes it: a
+          # read:org token belonging to an org owner sees it. Whether the
+          # discriminator is plain org membership or owner-level privilege
+          # could not be separated, because no non-owner member token was
+          # available; nor was any fine-grained token, so the remediation
+          # advice below (add "Organization administration: Read") is
+          # UNTESTED here and stated as advice, not as a proven mapping.
+          #
+          # What that uncertainty means operationally is the only thing this
+          # code depends on, and it is established: the field is readable
+          # under some tokens and absent under others, so its absence is
+          # reported as UNVERIFIED rather than treated as a failure or,
+          # worse, as a pass.
           all_rows=$(gh api --paginate "/orgs/$ORG/repos?type=all&per_page=100" \
             --jq '.[] | (if .private then "private" else "public" end)')
           enum_pub=$(printf  '%s\n' "$all_rows" | grep -cx public  || true)
@@ -130,26 +153,82 @@ jobs:
           dec_pub=$(gh api "/orgs/$ORG"  --jq '.public_repos        // "null"' 2>/dev/null || echo null)
           dec_priv=$(gh api "/orgs/$ORG" --jq '.total_private_repos // "null"' 2>/dev/null || echo null)
 
-          cov_unreadable=0
+          # ---- COVERAGE STATE: AN EXPLICIT LATTICE ---------------------------
+          # This used to be a chain of plain assignments, and the last writer
+          # won. Reproduced at 86ce0439e: an enumeration 3 public repos short
+          # WITH a readable non-public side set PARTIAL, and the `else` branch
+          # below then overwrote it with UNVERIFIED — so a measured shortfall
+          # was published as "we merely could not verify the non-public side".
+          # A false-clean inside the anti-false-clean fix.
+          #
+          # The states are therefore ranked, and an observation may only RAISE
+          # the state, never lower it. PRECEDENCE, weakest to strongest:
+          #
+          #   rank  state       meaning
+          #   ----  ----------  ---------------------------------------------
+          #     0   complete    every declared repo was enumerated AND read
+          #     1   UNVERIFIED  no shortfall measured, but a declared count
+          #                     was unreadable, so the ABSENCE of a shortfall
+          #                     could not be established either
+          #     2   PARTIAL     a shortfall was measured, or an enumerated
+          #                     repo failed to read — coverage is known short
+          #
+          # Consequences, which are the whole point of writing it down:
+          #   * PARTIAL dominates UNVERIFIED       (the N1 regression)
+          #   * UNVERIFIED never overwrites PARTIAL
+          #   * complete never overwrites either — nothing downgrades
+          #   * an unrecognised state ranks 2, so a future typo fails loud
+          #     rather than reading as a pass
+          cov_rank() {
+            case "$1" in
+              complete)   printf '%s' 0 ;;
+              UNVERIFIED) printf '%s' 1 ;;
+              PARTIAL)    printf '%s' 2 ;;
+              *)          printf '%s' 2 ;;
+            esac
+          }
           cov_state=complete
+          cov_raise() {
+            if [ "$(cov_rank "$1")" -gt "$(cov_rank "$cov_state")" ]; then
+              cov_state="$1"
+            fi
+          }
+
+          cov_unreadable=0
+          # Set when the shortfall is known to exist but is NOT MEASURABLE, so
+          # that `unreadable=0` is never published next to state=PARTIAL. See
+          # the public-only-token branch below.
+          cov_unreadable_unknown=0
+
           if [ "$dec_pub" != null ] && [ "$enum_pub" -lt "$dec_pub" ]; then
             cov_unreadable=$(( cov_unreadable + dec_pub - enum_pub ))
-            cov_state=PARTIAL
+            cov_raise PARTIAL
           fi
           if [ "$dec_priv" != null ]; then
             if [ "$enum_priv" -lt "$dec_priv" ]; then
               cov_unreadable=$(( cov_unreadable + dec_priv - enum_priv ))
-              cov_state=PARTIAL
+              cov_raise PARTIAL
             fi
           elif [ "$enum_priv" -eq 0 ]; then
             # Nothing non-public enumerated AND no declared count to check it
-            # against: this is the public-only-token case. Treat it as partial,
-            # because it is, and say so rather than publishing a clean table.
-            cov_state=PARTIAL
+            # against: this is the public-only-token case — the exact
+            # 2026-09-28 configuration that motivated this change. Treat it as
+            # partial, because it is, and say so rather than publishing a
+            # clean table.
+            #
+            # But the shortfall CANNOT be counted here: there is no declared
+            # non-public count to subtract the (zero) enumeration from. An
+            # earlier revision therefore published "state=PARTIAL,
+            # unreadable=0", which reads as "partial by zero repositories" —
+            # self-contradictory, and reassuring in exactly the wrong
+            # direction. Record it as unknown-but-nonzero instead: the whole
+            # non-public side of the org was not read, whatever its size.
+            cov_raise PARTIAL
+            cov_unreadable_unknown=1
           else
-            cov_state=UNVERIFIED
+            cov_raise UNVERIFIED
           fi
-          echo "coverage: state=$cov_state enumerated=$enum_pub public + $enum_priv non-public; declared=$dec_pub + $dec_priv; unreadable=$cov_unreadable (names withheld — this log is public)"
+          echo "coverage (preliminary, before the per-repo reads below): state=$cov_state enumerated=$enum_pub public + $enum_priv non-public; declared=$dec_pub + $dec_priv; unreadable=$cov_unreadable unknown-shortfall=$cov_unreadable_unknown (names withheld — this log is public)"
 
           # Ruleset endpoint requires admin:org scope. If the available
           # token (GITHUB_TOKEN by default) can't read it, degrade
@@ -200,7 +279,7 @@ jobs:
               # Enumerated but not readable. Either way this is partial
               # coverage, whichever tier it falls in.
               cov_unreadable=$((cov_unreadable + 1))
-              cov_state=PARTIAL
+              cov_raise PARTIAL
               if [ "$vis" = public ]; then
                 unreachable_list="${unreachable_list}- $repo"$'\n'
               else
@@ -261,6 +340,12 @@ jobs:
             fi
           done < <(printf '%s\n' "$repo_rows")
 
+          # N7: the preliminary line above is printed BEFORE the per-repo loop,
+          # which can still raise the state and the unreadable count. Printing
+          # it only there let this PUBLIC step log say `state=complete` while
+          # the PUBLIC issue it then opened said PARTIAL. This one is emitted
+          # after every writer has run and is the authoritative one.
+          echo "coverage (FINAL): state=$cov_state unreadable=$cov_unreadable unknown-shortfall=$cov_unreadable_unknown (names withheld — this log is public)"
           echo "summary: ok=$ok_count  gaps=$gap_count  public-gaps=$((gap_count - np_gap))  non-public-gaps=$np_gap  unreachable-non-public=$np_unreachable"
 
           {
@@ -271,6 +356,7 @@ jobs:
             echo "np_ok=$np_ok"
             echo "cov_state=$cov_state"
             echo "cov_unreadable=$cov_unreadable"
+            echo "cov_unreadable_unknown=$cov_unreadable_unknown"
             echo "cov_enum=$((enum_pub + enum_priv))"
             echo "gap_list<<GAPEOF"
             printf '%s' "${gap_list:-*(none)*
@@ -286,10 +372,19 @@ jobs:
             echo "EXEOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Upsert tracking issue on gaps
-        if: ${{ steps.scan.outputs.gap_count != '0' }}
+      # N8: this used to be gated on `gap_count != '0'` alone, so the coverage
+      # note — the one thing standing between a partial audit and a report
+      # that reads clean — only ever reached a reader when there happened to
+      # also be a gap. With partial coverage and zero gaps, nothing was
+      # created and nothing was commented, and the only trace of an audit that
+      # did not finish was a line in a step log nobody reads. Incomplete
+      # coverage is now reportable on its own, independent of gaps.
+      - name: Upsert tracking issue on gaps or incomplete coverage
+        if: ${{ steps.scan.outputs.gap_count != '0' || steps.scan.outputs.cov_state != 'complete' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GAP_COUNT: ${{ steps.scan.outputs.gap_count }}
+          COV_UNREADABLE_UNKNOWN: ${{ steps.scan.outputs.cov_unreadable_unknown }}
           GAP_LIST: ${{ steps.scan.outputs.gap_list }}
           UNREACHABLE_LIST: ${{ steps.scan.outputs.unreachable_list }}
           EXEMPT_LIST: ${{ steps.scan.outputs.exempt_list }}
@@ -300,7 +395,7 @@ jobs:
           COV_UNREADABLE: ${{ steps.scan.outputs.cov_unreadable }}
           COV_ENUM: ${{ steps.scan.outputs.cov_enum }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          TITLE: 'chore(governance): required-job audit — repos missing `required` status-check gate'
+          TITLE: 'chore(governance): required-job audit — missing `required` status-check gates and audit coverage'
         shell: bash
         run: |
           set -euo pipefail
@@ -314,30 +409,57 @@ jobs:
           # the two-tier split removed, and it is the only thing standing
           # between a partial audit and an issue that reads clean. Counts
           # only — no names, no branch names.
+          # N2: in the public-only-token mode the shortfall is real but not
+          # measurable — there is no declared non-public count to subtract the
+          # zero enumeration from — so `COV_UNREADABLE` is 0 there. Publishing
+          # "PARTIAL, 0 unreadable" understates a whole unread side of the org.
+          # Render it as unknown-but-nonzero on that path instead.
+          if [ "${COV_UNREADABLE_UNKNOWN:-0}" = 1 ]; then
+            shortfall="an **unknown, non-zero** number of this org's repositories"
+            shortfall_detail="The number cannot be given: this token enumerated **0** non-public repositories and cannot read the org's declared non-public count either, so the size of what it did not see is not measurable from inside this run."
+            if [ "${COV_UNREADABLE}" != 0 ]; then
+              shortfall_detail="${shortfall_detail} A further **${COV_UNREADABLE}** were enumerated and then failed to read."
+            fi
+          else
+            shortfall="**${COV_UNREADABLE}** of this org's repositories"
+            shortfall_detail=""
+          fi
+
           case "$COV_STATE" in
             complete)
               coverage="Coverage: **complete**. All ${COV_ENUM} non-archived repositories in the org were enumerated and read."
               ;;
             UNVERIFIED)
               coverage="> [!NOTE]
-          > **Coverage of non-public repositories is UNVERIFIED.** ${COV_ENUM} non-archived repositories were enumerated and read, but \`total_private_repos\` — an organization-administration field, not a membership field — is not readable by this token, so the audit cannot prove it saw every non-public repository. Add **Organization administration: Read** to the token for a verified count. Names are withheld: this issue is public."
+          > **Coverage of non-public repositories is UNVERIFIED.** ${COV_ENUM} non-archived repositories were enumerated and read, but \`total_private_repos\` is not readable by this token, so the audit cannot prove it saw every non-public repository. That field sits in the owner-only block of the org object; what exactly gates it is **not established here** — measured against this org, it was absent for every non-member token tried and present for both org-owner tokens tried, including one without \`admin:org\` scope, so it is not the \`admin:org\` scope that exposes it. Adding **Organization administration: Read** to a fine-grained token is the suggested remedy but was **not tested**. Names are withheld: this issue is public."
               ;;
             *)
               coverage="> [!WARNING]
           > **Coverage was INCOMPLETE — do not read this issue as a clean bill of health.**
           >
-          > **${COV_UNREADABLE}** of the org's repositories could not be read by the audit runner, so they were **not audited at all** and appear in no list and no count below. Names are withheld: this issue is public.
+          > The audit runner could not read ${shortfall}, so they were **not audited at all** and appear in no list and no count below. ${shortfall_detail} Names are withheld: this issue is public.
           >
           > Grant a token that can read the whole org — the existing org secret \`SYNC_TOKEN\` granted to this repository, or an org-wide \`ORG_READ_TOKEN\` (fine-grained: Metadata + Contents read) — and re-run. Until then this audit is partial by construction."
               ;;
           esac
 
+          # N8: with the step now also reachable on zero gaps, neither the
+          # lead sentence nor the ruleset paragraph may assert a finding that
+          # does not exist.
+          if [ "${GAP_COUNT:-0}" != 0 ]; then
+            lead="The weekly \`required\`-job audit detected repos without a CI job emitting the \`required\` status-check context."
+            ruleset_note="These repos are governed by org ruleset \`default-branch-baseline\` (id 15191038) which requires that context. Until a \`required\` job is added, PRs will hang in \"Expected — Waiting for status to be reported\" and be blocked from merge."
+          else
+            lead="The weekly \`required\`-job audit found **no missing \`required\` job among the repositories it was able to read** — but it could not read all of them. The coverage note below **is** the finding; there is nothing else in this comment."
+            ruleset_note="Repositories governed by org ruleset \`default-branch-baseline\` (id 15191038) must emit that context or their PRs hang in \"Expected — Waiting for status to be reported\". Nothing below is a gap — the point of this comment is that the audit's coverage was short."
+          fi
+
           body=$(cat <<BODYEOF
-          The weekly \`required\`-job audit detected repos without a CI job emitting the \`required\` status-check context.
+          ${lead}
 
           ${coverage}
 
-          These repos are governed by org ruleset \`default-branch-baseline\` (id 15191038) which requires that context. Until a \`required\` job is added, PRs will hang in "Expected — Waiting for status to be reported" and be blocked from merge.
+          ${ruleset_note}
 
           ## Public repos missing the \`required\` job
 

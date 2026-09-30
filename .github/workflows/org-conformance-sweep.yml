@@ -23,13 +23,28 @@
 # covered by the Contents-only scope this comment asked for previously.
 #
 # OPTIONAL, and it changes what the completeness gate can prove:
-# Organization administration: Read. `total_private_repos` — the only source
-# for the org's declared non-public repository count — lives in the owner-only
-# block of the org object, next to `plan` and `disk_usage`. It is an
-# organization-ADMINISTRATION field, not a membership field. Without it the
-# non-public side of the assertion is UNVERIFIED (enumeration corroborated
-# against an independent listing, and a zero non-public enumeration refused)
-# rather than strict. See A1 below; the summary always states which mode ran.
+# a token that can read `total_private_repos` — the only source for the org's
+# declared non-public repository count. It lives in the owner-only block of
+# the org object, next to `plan` and `disk_usage`.
+#
+# WHAT GATES IT IS NOT ESTABLISHED, and an earlier revision of this comment
+# asserted more than anyone had checked. It claimed the field is
+# "organization-ADMINISTRATION, not a membership field"; nobody verified that,
+# and the one measurement available contradicts the scope half of it. Measured
+# against this org on 2026-09-29: ABSENT under every token tried that is not
+# an org member, PRESENT under both tried that belong to an org owner —
+# including one carrying only `repo`+`read:org` and NOT `admin:org`. So it is
+# not the `admin:org` scope that exposes it; whether the discriminator is
+# plain membership or owner-level privilege could not be separated, because no
+# non-owner-member token and no fine-grained token were available to test.
+# Adding "Organization administration: Read" to a fine-grained token is the
+# suggested remedy below; that mapping is UNTESTED here.
+#
+# What the code depends on is established either way: the field is readable
+# under some tokens and absent under others, so without it the non-public side
+# of the assertion is UNVERIFIED (enumeration corroborated against an
+# independent listing, and a zero non-public enumeration refused) rather than
+# strict. See A1 below; the summary always states which mode ran.
 #
 # Until such a token is available this job FAILS LOUDLY: the completeness
 # assertion below refuses to report a sweep that covered part of the org, and
@@ -166,6 +181,57 @@ jobs:
           }
           END { printf "%d\n", (best ? int(best + 0.5) : 0) }
           AWK
+          cat > "$RUNNER_TEMP/sweep/oncron.awk" <<'AWK'
+          # Reads a whole workflow file and emits the cron expressions of its
+          # LIVE `on:` schedule, one per line. Nothing else may reach stdout:
+          # check 7's staleness window is derived from this, so a false
+          # positive invents a cadence for a workflow that has none, and a
+          # false negative silently stops judging one that does.
+          #
+          # Replaces an inline `awk | sed` pair that got both anchors wrong.
+          #
+          # 1. BLOCK TERMINATOR. The `on:` block ends at the next TOP-LEVEL
+          #    key, quoted or not. The previous terminator class was
+          #    /^[^[:space:]"]/, which EXCLUDES the double quote -- so in a
+          #    fully quoted workflow (exactly what the gh-aw compiler emits
+          #    for every `.lock.yml` in this org) `"jobs":` did not close the
+          #    block, the whole rest of the file was swallowed, and a
+          #    cron-looking string inside a later `run:` step was read as a
+          #    live schedule. Reproduced: a dispatch-only quoted workflow
+          #    whose `run:` step mentions a cron string scored a 14-day
+          #    window instead of "no schedule".
+          #
+          # 2. COMMENTS. `pins.awk` is deliberately anchored so a
+          #    commented-out `uses:` is invisible. A commented-out
+          #    `# - cron:` must be invisible for the same reason, and it was
+          #    not: the old extractor's leading `.*` matched straight through
+          #    the `#   - ` prefix, so a schedule someone had switched off
+          #    still produced a window. Comment lines are DROPPED rather than
+          #    treated as the end of the block, so a comment sitting between
+          #    top-level keys cannot truncate a real schedule either.
+          #
+          # A cron entry is a YAML sequence item, at any indent, with nothing
+          # before it but whitespace and the `-` marker. Both the quoted and
+          # the bare scalar forms are read; a trailing `# comment` on a bare
+          # scalar is stripped.
+          /^[[:space:]]*#/          { next }
+          /^["']?on["']?:/          { inon = 1; next }
+          inon && /^[^[:space:]]/   { inon = 0 }
+          inon && match($0, /^[[:space:]]*-[[:space:]]*["']?cron["']?:[[:space:]]*/) {
+            s = substr($0, RSTART + RLENGTH)
+            if (s ~ /^["']/) {
+              q = substr(s, 1, 1)
+              s = substr(s, 2)
+              i = index(s, q)
+              if (i > 0) s = substr(s, 1, i - 1)
+            } else {
+              sub(/[[:space:]]+#.*$/, "", s)
+            }
+            gsub(/^[[:space:]]+/, "", s)
+            gsub(/[[:space:]]+$/, "", s)
+            if (s != "") print s
+          }
+          AWK
           awk -f "$RUNNER_TEMP/sweep/pins.awk" </dev/null
           # Self-test the cadence derivation at runtime. Check 7's whole
           # correctness now rests on it, and a silent regression here would
@@ -174,7 +240,45 @@ jobs:
           printf '0 8 1 * *\n'  | awk -f "$RUNNER_TEMP/sweep/cron.awk" | grep -qx 30
           printf '0 3 * * *\n'  | awk -f "$RUNNER_TEMP/sweep/cron.awk" | grep -qx 1
           printf '\n'           | awk -f "$RUNNER_TEMP/sweep/cron.awk" | grep -qx 0
-          echo "parsers OK (cron self-test: weekly=7d monthly=30d daily=1d none=0)"
+
+          # Self-test the on:-block extractor too. Both of its anchors exist
+          # because they were wrong once; a positive control per anchor, and
+          # negative controls that prove the matcher can still see a real one.
+          #
+          # Fixtures are built with `printf` and explicit \n rather than as
+          # multi-line shell literals. Indentation IS the input here -- the
+          # block terminator is "any non-space at column zero" -- so a fixture
+          # whose leading whitespace is not byte-exact tests nothing. Written
+          # as an indented literal and de-indented with `sed 's/^ *//'`, every
+          # line lands at column zero, the `on:` block closes immediately, and
+          # all four cases pass for the wrong reason. (That is not a
+          # hypothetical: it is how the first draft of this self-test was
+          # written, and it failed the moment it was actually executed.)
+          oncron() { printf '%b' "$1" | awk -f "$RUNNER_TEMP/sweep/oncron.awk"; }
+
+          # positive: plain and quoted real schedules are both still found
+          [ "$(oncron 'name: x\non:\n  schedule:\n    - cron: "0 7 * * 1"\njobs:\n  a: {}\n')" = "0 7 * * 1" ]
+          [ "$(oncron '"name": "x"\n"on":\n  "schedule":\n    - "cron": "0 7 * * 1"\n"jobs":\n  "a": null\n')" = "0 7 * * 1" ]
+          # positive: bare (unquoted) scalar with a trailing comment
+          [ "$(oncron 'on:\n  schedule:\n    - cron: 0 7 * * 1   # weekly\njobs: {}\n')" = "0 7 * * 1" ]
+          # positive: a column-zero comment inside the block must NOT truncate
+          # a real schedule that follows it
+          [ "$(oncron 'on:\n# bare comment at column zero\n  schedule:\n    - cron: "0 7 * * 1"\njobs: {}\n')" = "0 7 * * 1" ]
+          # negative 1 (quoted terminator): a dispatch-only QUOTED workflow
+          # whose later `run:` step happens to contain a line that looks
+          # exactly like a schedule entry. `"jobs":` must close the `on:`
+          # block, or that line is read as a live cron. This is the N5
+          # reproduction, and it is a real one: checked both ways, the fixed
+          # parser returns nothing here while a parser carrying the old
+          # terminator class returns `0 3 * * *`. An earlier draft of this
+          # fixture used a one-line `- "run": echo "cron: ..."`, which the
+          # anchored cron rule cannot match at all -- so it passed under the
+          # regressed parser too and tested nothing.
+          [ -z "$(oncron '"on":\n  "workflow_dispatch": null\n"jobs":\n  "agent":\n    "steps":\n      - "run": |\n          cat > crontab.yml <<CRONEOF\n          schedule:\n            - cron: "0 3 * * *"\n          CRONEOF\n')" ]
+          # negative 2 (comments): a commented-out schedule is not a schedule.
+          # This is the N6 reproduction.
+          [ -z "$(oncron 'on:\n  # schedule:\n  #   - cron: "0 3 * * *"\n  workflow_dispatch:\njobs: {}\n')" ]
+          echo "parsers OK (cron self-test: weekly=7d monthly=30d daily=1d none=0; on:-block self-test: plain/quoted/bare schedules found, column-zero comment tolerated, quoted terminator and commented-out cron both rejected)"
 
       - name: Sweep org repositories
         shell: bash
@@ -194,6 +298,7 @@ jobs:
           ORG: ${{ github.repository_owner }}
           AWK_PINS: ${{ runner.temp }}/sweep/pins.awk
           AWK_CRON: ${{ runner.temp }}/sweep/cron.awk
+          AWK_ONCRON: ${{ runner.temp }}/sweep/oncron.awk
         run: |
           set -euo pipefail
 
@@ -280,14 +385,21 @@ jobs:
           #   * `/orgs/{org}` `.public_repos` — a PUBLIC field. Always
           #     readable. This is the one non-circular witness available, and
           #     the public side is asserted strictly against it.
-          #   * `/orgs/{org}` `.total_private_repos` — an org-ADMINISTRATION
-          #     field, returned next to `.plan`, `.owned_private_repos` and
-          #     `.disk_usage` in the owner-only block. It is NOT a membership
-          #     field. A correctly scoped read-only token — exactly the
-          #     Metadata+Contents+Actions token this file asks for — does not
-          #     get it. Inferring "this token is not an org member" from its
-          #     absence was WRONG and failed the very configuration the
-          #     remediation text told the operator to create.
+          #   * `/orgs/{org}` `.total_private_repos` — returned next to
+          #     `.plan`, `.owned_private_repos` and `.disk_usage` in the
+          #     owner-only block of the org object. WHAT GATES IT WAS NOT
+          #     ESTABLISHED; see the header. Measured 2026-09-29: absent under
+          #     every non-member token tried, present under both org-owner
+          #     tokens tried, one of which lacks `admin:org` — so it is not
+          #     the `admin:org` scope. Two earlier readings of this field were
+          #     both wrong, in opposite directions: inferring "this token is
+          #     not an org member" from its absence failed the very
+          #     configuration the remediation text told the operator to
+          #     create, and then asserting "administration, not membership"
+          #     replaced one unverified claim with another. The code below
+          #     depends only on the part that IS established: it is readable
+          #     under some tokens and not others, so its absence means the
+          #     non-public shortfall is not measurable on this run.
           #   * every count of non-public repositories that a non-admin token
           #     CAN read (`/orgs/{org}/repos`, the search API's
           #     `total_count`, GraphQL `repositories(privacy: PRIVATE)
@@ -377,11 +489,12 @@ jobs:
               incomplete=1
             fi
           else
-            # `.total_private_repos` is org-administration-gated, NOT
-            # membership-gated, so its absence says nothing about membership.
-            # What it does mean is that the non-public SHORTFALL is not
-            # measurable on this run. Assert what is still assertable: that
-            # the token has non-public visibility in this org at all.
+            # `.total_private_repos` is unreadable here. What gates it is
+            # not established (see the header), so its absence licenses no
+            # inference about this token's membership either way. What it
+            # DOES mean is the only thing used below: the non-public
+            # SHORTFALL is not measurable on this run. Assert what is still
+            # assertable — that the token has non-public visibility at all.
             priv_mode=UNVERIFIED
             if [ "$enum_priv" -eq 0 ]; then
               echo "::error title=org-conformance-sweep::this token enumerated 0 non-public repositories AND cannot read the org's declared non-public count, so the sweep cannot tell a public-only token apart from an org that has none — and must not guess. Grant the existing org secret SYNC_TOKEN to this repository, or create ORG_READ_TOKEN (org-wide), fine-grained with Metadata + Contents + Actions: Read. Add Organization administration: Read to make the non-public count verifiable (VERIFIED mode); without it the non-public side is reported UNVERIFIED. Refusing to report a partial sweep as clean."
@@ -403,7 +516,7 @@ jobs:
               echo
               echo "Grant the existing org secret \`SYNC_TOKEN\` to this repository, or create \`ORG_READ_TOKEN\` org-wide — fine-grained, **Metadata: Read + Contents: Read + Actions: Read**."
               echo
-              echo "\`declared\` for the non-public side comes from \`total_private_repos\`, which is an **organization-administration** field and not a membership field. A correctly scoped read-only token does not see it, and that alone is **not** a failure: add **Organization administration: Read** to get the strict count (VERIFIED), or accept that the non-public side is reported UNVERIFIED."
+              echo "\`declared\` for the non-public side comes from \`total_private_repos\`, which sits in the owner-only block of the org object. **What gates it is not established here:** measured 2026-09-29 against this org, it was absent under every non-member token tried and present under both org-owner tokens tried, including one without \`admin:org\` scope — so it is not that scope. A read-only token not seeing it is **not** a failure: adding **Organization administration: Read** to a fine-grained token is the suggested route to the strict count (VERIFIED) but is **untested**; otherwise the non-public side is reported UNVERIFIED."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
@@ -449,6 +562,31 @@ jobs:
           PIN_FAIL_DAYS=90   # a full quarter
           NOW=$(date -u +%s)
 
+          # ---- N9: never hand an unvalidated value to `date -d` ------------
+          # The old sites guarded these values for EMPTINESS but not for
+          # PARSEABILITY, and the consequence was measured, not theorised. With
+          # `set -euo pipefail`, the assignment form
+          #     days=$(( ( NOW - $(date -u -d "$bad" +%s) ) / 86400 ))
+          # does NOT abort the step. It writes `date: invalid date` and an
+          # `arithmetic syntax error` to this PUBLIC step log, and then bash
+          # abandons the rest of the enclosing function AND the enclosing
+          # `for r in $repos` loop -- so every repository after the offending
+          # one is silently never swept, and the report renders as though they
+          # were clean. Reproduced with a three-repo loop: one bad date and
+          # repo 3 vanished from the summary with exit status 0. That is the
+          # exact false-clean class this whole file exists to prevent, so the
+          # parse is validated before the arithmetic rather than after it.
+          #
+          # `days_since` prints whole days and succeeds, or prints nothing and
+          # returns 1. Callers must branch on the status, never on the string.
+          days_since() {
+            local v="$1" e
+            [ -n "$v" ] || return 1
+            e=$(date -u -d "$v" +%s 2>/dev/null) || return 1
+            case "$e" in ''|*[!0-9]*) return 1 ;; esac
+            printf '%s\n' $(( ( NOW - e ) / 86400 ))
+          }
+
           # The compare response carries at most CMP_FILE_CAP file entries on
           # its first page and OMITS `.files` altogether on a very large diff.
           # `[.files[]? | ...]` tolerates both silently, and a silently empty
@@ -460,9 +598,37 @@ jobs:
           # Today's margin is wide: the oldest pin in the org is 47 commits
           # and 38 changed files, so this is latent, not live. It is still
           # wrong to leave a check whose failure mode is "reports clean".
+          #
+          # N3 -- WHICH TRUNCATION ACTUALLY DEGRADES THE INTERSECTION. An
+          # earlier revision degraded on the COMMIT cap as well, on the
+          # reasoning that "commits truncated implies the file list is derived
+          # from a partial range". That reasoning is wrong, and it silently
+          # disabled the `.files` precision filter that this PR's
+          # DO-NOT-REGRESS list exists to protect: any pin more than 250
+          # commits behind main reported UNKNOWN whether or not its target had
+          # changed, so the two genuine false positives the filter removes came
+          # straight back for exactly the oldest pins.
+          #
+          # MEASURED 2026-09-29 against the public `github/gitignore` repo,
+          # compare base...head with total_commits=1030:
+          #   * `.commits` came back truncated at 250 of 1030;
+          #   * `.files` came back with 160 entries, well under the 300 cap;
+          #   * commit 73b42b65 is ABSENT from the truncated `.commits`, and
+          #     the file it changed (`TestComplete.gitignore`) is PRESENT in
+          #     `.files`;
+          #   * diffing `.files` against `git diff --name-only base head` on a
+          #     real clone matched exactly (the one extra entry is a rename
+          #     reported as an add/remove pair).
+          # So `.files` is the COMPLETE base...head diff and is not truncated
+          # by commit truncation. Only the FILE cap, or an omitted `.files`
+          # key, makes the intersection unsound.
+          #
+          # Commit truncation is still recorded, because it is worth printing
+          # next to a very stale pin -- but as an informational note that does
+          # not change the verdict.
           CMP_FILE_CAP=300     # the compare API's per-response file cap
           CMP_COMMIT_CAP=250   # the compare API's per-response commit cap
-          declare -A CMP_ST CMP_AHEAD CMP_DATE CMP_FILES CMP_DEGRADED
+          declare -A CMP_ST CMP_AHEAD CMP_DATE CMP_FILES CMP_DEGRADED CMP_MANY
           compare_ref() {
             local ref="$1" j nfiles ncommits total
             if [ -n "${CMP_ST[$ref]:-}" ]; then return 0; fi
@@ -471,6 +637,7 @@ jobs:
             CMP_AHEAD[$ref]=$(printf '%s' "$j" | jq -r '.ahead_by // 0')
             CMP_DATE[$ref]=$(printf '%s' "$j" | jq -r '.base_commit.commit.committer.date // empty')
             CMP_DEGRADED[$ref]=""
+            CMP_MANY[$ref]=""
             if ! printf '%s' "$j" | jq -e 'has("files")' >/dev/null 2>&1; then
               # Omitted entirely. There is no changed-file list to intersect,
               # so nothing about the effective surface is knowable.
@@ -486,12 +653,16 @@ jobs:
               nfiles=$(printf '%s' "$j"   | jq -r '(.files    | length) // 0')
               ncommits=$(printf '%s' "$j" | jq -r '(.commits  | length) // 0')
               total=$(printf '%s' "$j"    | jq -r '.total_commits // 0')
+              # Only the FILE cap degrades the intersection -- see the
+              # measurement above the cap constants.
               if [ "$nfiles" -ge "$CMP_FILE_CAP" ]; then
                 CMP_DEGRADED[$ref]="files-truncated-at-$nfiles"
-              elif [ "$ncommits" -ge "$CMP_COMMIT_CAP" ] || [ "$total" -gt "$CMP_COMMIT_CAP" ]; then
-                # Commits truncated implies the file list is derived from a
-                # partial range, so the intersection is not authoritative.
-                CMP_DEGRADED[$ref]="commits-truncated-at-$ncommits-of-$total"
+              fi
+              if [ "$ncommits" -ge "$CMP_COMMIT_CAP" ] || [ "$total" -gt "$CMP_COMMIT_CAP" ]; then
+                # Informational only. The changed-file list is still the whole
+                # base...head diff, so the precision filter still applies and
+                # the verdict is still earned.
+                CMP_MANY[$ref]="commits-page-truncated-at-$ncommits-of-$total"
               fi
             fi
             return 0
@@ -504,7 +675,7 @@ jobs:
           # every counter increment below — a trap this repo has already hit.
           check_pins() {
             local r="$1" vis="$2" f="$3" body="$4"
-            local wf ref kind ver eff e stale sev days pinned_at ahead note age age_h
+            local wf ref kind ver eff e stale sev days pinned_at ahead note age age_h why d
             while IFS=$'\t' read -r wf ref kind ver; do
               if [ -z "$wf" ]; then continue; fi
               pin_total=$((pin_total + 1))
@@ -525,13 +696,10 @@ jobs:
               elif ! compare_ref "$ref"; then
                 sev=UNRESOLVABLE
               else
-                # Same lesson as the unbound slice below: never hand an
-                # unvalidated value to `date -d`. A compare that somehow
-                # carries no base commit leaves the age unknown rather than
-                # aborting the sweep.
-                if [ -n "${CMP_DATE[$ref]:-}" ]; then
-                  days=$(( ( NOW - $(date -u -d "${CMP_DATE[$ref]}" +%s) ) / 86400 ))
-                fi
+                # N9: `days_since` validates the parse, so a compare that
+                # carries no base commit OR carries an unparseable one leaves
+                # the age unknown instead of silently truncating the sweep.
+                if d=$(days_since "${CMP_DATE[$ref]:-}"); then days=$d; fi
                 eff="$wf"
                 if [ "$wf" = required.yml ]; then eff="$wf $SIBLINGS"; fi
                 for e in $eff; do
@@ -558,6 +726,15 @@ jobs:
                   sev=UNKNOWN
                   note="${CMP_DEGRADED[$ref]}"
                 elif [ -z "$stale" ]; then sev=current
+                elif [ "$days" -lt 0 ]; then
+                  # N9, second half: the target DID change, but the pinned
+                  # commit carries no usable date, so no threshold can be
+                  # applied. The shipped code fell through to `sev=info` here,
+                  # which is not counted as drift and emits no warning -- a
+                  # changed target reported as fine. UNKNOWN is the honest
+                  # verdict, and it does count.
+                  sev=UNKNOWN
+                  note="target changed; pinned-commit date unreadable"
                 elif [ "$days" -ge "$PIN_FAIL_DAYS" ]; then sev="STALE-90d"
                 elif [ "$days" -ge "$PIN_WARN_DAYS" ]; then sev="stale-30d"
                 else sev=info
@@ -574,12 +751,32 @@ jobs:
               pinned_at=${pinned_at:0:10}
               ahead=${CMP_AHEAD[$ref]:-}
               if [ "$days" -ge 0 ]; then age="${days}"; age_h="${days}d"; else age="—"; age_h="age unknown"; fi
+
+              # N10: the old annotation rendered `${note:-${stale:- no target
+              # change}}`, so an UNPINNED, SHORT-SHA or UNRESOLVABLE pin -- for
+              # which no compare was ever issued, or whose compare failed --
+              # published a warning asserting "no target change". That is not a
+              # claim the code is in any position to make on those paths. Say
+              # what actually happened instead, per path, explicitly.
+              case "$sev" in
+                UNPINNED|SHORT-SHA|UNRESOLVABLE)
+                  why="not compared" ;;
+                *)
+                  # `stale` accumulates as " a b c"; drop the leading space so
+                  # the cell does not render with a stray indent.
+                  why="${note:-${stale# }}"
+                  why="${why:-no target change}" ;;
+              esac
+              # N3: commit-page truncation is printed, but it no longer
+              # changes the verdict.
+              if [ -n "${CMP_MANY[$ref]:-}" ]; then why="$why; ${CMP_MANY[$ref]}"; fi
+
               case "$sev" in current|info) ;; *) pin_bad=$((pin_bad + 1)) ;; esac
               if [ "$vis" = public ]; then
-                pin_rows="${pin_rows}| $sev | \`$r\` | \`$f\` | \`$wf@${ref:0:8}\` | ${pinned_at:-—} | $age | ${ahead:-—} | ${note:-${stale:-—}} |"$'\n'
+                pin_rows="${pin_rows}| $sev | \`$r\` | \`$f\` | \`$wf@${ref:0:8}\` | ${pinned_at:-—} | $age | ${ahead:-—} | $why |"$'\n'
                 case "$sev" in
                   current|info) ;;
-                  *) echo "::warning title=org-conformance-sweep::$r $f pins $wf@${ref:0:8} — $sev ($age_h; ${note:-${stale:- no target change}})" ;;
+                  *) echo "::warning title=org-conformance-sweep::$r $f pins $wf@${ref:0:8} — $sev ($age_h; $why)" ;;
                 esac
               else
                 # Tier 2. The name, the caller file name and the SHA are never
@@ -616,11 +813,33 @@ jobs:
           #   schedule present -> window = RUN_MISSED_FIRES x the shortest
           #     cron interval, never below RUN_STALE_FLOOR_DAYS. A weekly cron
           #     lands on exactly 14 days, so every weekly finding is unchanged.
-          #   no schedule      -> NOT judged on elapsed days at all. Reported
-          #     as ON-DEMAND, informational, never a finding. The right signal
-          #     for an event-driven workflow is its success RATE, which
-          #     elapsed days cannot express; inventing one would be the same
-          #     mistake in the other direction.
+          #   no schedule      -> NOT judged on ELAPSED DAYS at all. There is
+          #     no cadence to be late against, so lateness is undefined.
+          #
+          # N4 -- AND THAT IS ALL CADENCE CONTROLS. An earlier revision over-
+          # corrected "no schedule" into "never judge", which is a different
+          # and wrong claim: it meant an ON-DEMAND workflow whose LAST RUN
+          # FAILED rendered a table row and produced no finding and no
+          # warning. Live instance at the time of writing: a
+          # `workflow_dispatch`-only agentic lock workflow whose last run is a
+          # failure and whose last green run is three weeks old, reported as a
+          # clean ON-DEMAND row.
+          #
+          # So the two questions are asked SEPARATELY, and only the second is
+          # cadence-dependent:
+          #
+          #   last_run_failed  -- did the most recent run end in anything
+          #     other than success? Meaningful for EVERY workflow, scheduled
+          #     or not. Nothing about a workflow being event-driven makes a
+          #     red run acceptable, so this is a finding regardless of cadence.
+          #   late_by_cadence  -- has it gone longer than its own derived
+          #     window without a green run? Meaningful ONLY when it has a
+          #     schedule. With `win == 0` this question is *not asked*, which
+          #     is not the same as answering "fine".
+          #
+          # The distinction the fix must preserve: an on-demand workflow with
+          # a failing last run IS reported; an on-demand workflow that has
+          # simply not been invoked recently is NOT.
           #
           # A workflow that has NEVER RUN is also not rot. It is only a
           # finding when it is SCHEDULED and its own record is already older
@@ -639,8 +858,7 @@ jobs:
             local body iv win
             body="$1"
             iv=$(printf '%s\n' "$body" \
-                 | awk '/^"?on"?:/{o=1;next} o&&/^[^[:space:]"]/{o=0} o' \
-                 | sed -n 's/.*cron"*:[[:space:]]*["'"'"']\([^"'"'"']*\)["'"'"'].*/\1/p' \
+                 | awk -f "$AWK_ONCRON" \
                  | awk -f "$AWK_CRON")
             if [ -z "$iv" ] || [ "$iv" -eq 0 ]; then printf '0\n'; return 0; fi
             win=$(( RUN_MISSED_FIRES * iv ))
@@ -654,6 +872,7 @@ jobs:
             local r="$1" vis="$2"
             local id state path created f body hdr agent cver last conc when succ days
             local win age sev finding repo_cvers ndistinct green_cell win_cell
+            local last_run_failed late_by_cadence d
             repo_cvers=""
             while IFS=$'\t' read -r id state path created; do
               f=${path##*/}
@@ -720,19 +939,37 @@ jobs:
                          --jq '.workflow_runs[0].created_at // "NEVER"' 2>/dev/null || echo NEVER)
               fi
 
+              # N9: validated parse. `days` is the age of the last GREEN run.
               days=-1
-              if [ "$succ" != NEVER ] && [ -n "$succ" ] && [ "$succ" != - ]; then
-                days=$(( ( NOW - $(date -u -d "$succ" +%s) ) / 86400 ))
+              if [ "$succ" != NEVER ]; then
+                if d=$(days_since "$succ"); then days=$d; fi
               fi
 
-              # ---- verdict ----
+              # ---- verdict ----------------------------------------------
+              # TWO INDEPENDENT QUESTIONS (N4). See the header comment above.
+              #
+              #   last_run_failed  cadence-INDEPENDENT. Asked of every
+              #                    workflow that has run at all.
+              #   late_by_cadence  cadence-DEPENDENT. Asked only when the
+              #                    workflow has a schedule (`win > 0`).
+              #
+              # They are computed first and separately, then folded into ONE
+              # severity for the row. The fold is a strict precedence so the
+              # tier-2 buckets stay disjoint and still sum to the total, which
+              # an earlier revision got wrong in the other direction.
+              last_run_failed=no
+              late_by_cadence=no
+              if [ "$when" != - ] && [ "$conc" != success ]; then last_run_failed=yes; fi
+              if [ "$win" -gt 0 ] && [ "$days" -ge 0 ] && [ "$days" -ge "$win" ]; then
+                late_by_cadence=yes
+              fi
+
               sev=green; finding=no
               if [ "$when" = - ]; then
-                # Never run at all.
+                # Never run at all. Neither question applies: there is no last
+                # run to have failed, and no green run to be late for.
                 age=-1
-                if [ -n "$created" ] && [ "$created" != - ]; then
-                  age=$(( ( NOW - $(date -u -d "$created" +%s) ) / 86400 ))
-                fi
+                if d=$(days_since "$created"); then age=$d; fi
                 if [ "$win" -gt 0 ] && [ "$age" -gt "$win" ]; then
                   # Scheduled, and older than its own window: it should have
                   # fired by now and never did.
@@ -746,14 +983,30 @@ jobs:
                 # Has run, has never once succeeded. A finding regardless of
                 # cadence: there is nothing to be early or late for.
                 sev=NEVER-GREEN; finding=yes
-              elif [ "$win" -eq 0 ]; then
-                # No schedule. Elapsed days say nothing here.
-                sev=ON-DEMAND
-              elif [ "$days" -ge "$win" ]; then
+              elif [ "$late_by_cadence" = yes ]; then
+                # Overdue against its own schedule. Subsumes a failing last
+                # run for row purposes -- it is the stronger statement -- and
+                # the cadence-independent count below still sees it.
                 sev=STALE; finding=yes
+              elif [ "$last_run_failed" = yes ]; then
+                # THE N4 CASE. Its last run is red. Either it has no schedule
+                # at all, or it is still inside its window; in both cases the
+                # old code stopped here and said nothing.
+                sev=FAILING; finding=yes
+              elif [ "$win" -eq 0 ]; then
+                # No schedule, and its last run was green. Elapsed days say
+                # nothing about it, so nothing is claimed.
+                sev=ON-DEMAND
               fi
 
               if [ "$finding" = yes ]; then health_bad=$((health_bad + 1)); fi
+              # Counted independently of the severity fold, so a STALE
+              # workflow whose last run is also red is visible as both. This
+              # is the cadence-independent half of the check and it spans both
+              # visibility tiers, because it carries no name.
+              if [ "$last_run_failed" = yes ]; then
+                health_last_run_failed=$((health_last_run_failed + 1))
+              fi
 
               if [ "$days" -ge 0 ]; then green_cell="${succ:0:10} (${days}d)"; else green_cell=never; fi
               if [ "$win" -gt 0 ];  then win_cell="${win}d";                  else win_cell="no schedule"; fi
@@ -764,7 +1017,7 @@ jobs:
                   if [ "$vis" = public ]; then
                     health_rows="${health_rows}| $sev | \`$r\` | \`$f\` | $conc | $green_cell | $win_cell | ${agent:-?} |"$'\n'
                     if [ "$finding" = yes ]; then
-                      echo "::warning title=org-conformance-sweep::$r $f — $sev (last run: $conc, window: ${win}d, agent: ${agent:-?})"
+                      echo "::warning title=org-conformance-sweep::$r $f — $sev (last run: $conc, last green: $green_cell, window: $win_cell, agent: ${agent:-?})"
                     fi
                   elif [ "$finding" = yes ]; then
                     # Tier 2, and DISJOINT buckets: an earlier revision
@@ -772,6 +1025,7 @@ jobs:
                     # subset of the 3, which reads as 4 findings.
                     case "$sev" in
                       STALE)       np_stale=$((       ${np_stale:-0} + 1 )) ;;
+                      FAILING)     np_failing=$((     ${np_failing:-0} + 1 )) ;;
                       NEVER-GREEN) np_never_green=$(( ${np_never_green:-0} + 1 )) ;;
                       NEVER-RUN)   np_never_run=$((   ${np_never_run:-0} + 1 )) ;;
                     esac
@@ -794,9 +1048,9 @@ jobs:
           conf_rows="" conf_kinds=""
           pin_rows="" nover_rows="" np_pin_sev="" np_pin_worst=0
           pin_total=0 pin_nover=0 pin_bad=0
-          health_rows="" health_bad=0
+          health_rows="" health_bad=0 health_last_run_failed=0
           # Disjoint tier-2 run-health buckets (see M4 in check_run_health).
-          np_stale=0 np_never_green=0 np_never_run=0 np_orphan=0 np_health_worst=0
+          np_stale=0 np_failing=0 np_never_green=0 np_never_run=0 np_orphan=0 np_health_worst=0
           agent_tally="" compiler_seen="" multi_compiler=0
 
           skipped_public="" skipped_withheld=0
@@ -998,7 +1252,7 @@ jobs:
             if [ "$priv_mode" = VERIFIED ]; then
               echo "Coverage: **complete and VERIFIED** on both sides — the org declares $dec_pub public + $dec_priv non-public and both were fully enumerated."
             else
-              echo "Coverage: public side **complete and VERIFIED** against the org's declared $dec_pub. Non-public side **UNVERIFIED** — \`total_private_repos\` is an organization-administration field and this token cannot read it, so the $enum_priv non-public repositories enumerated here are corroborated by a second, independent listing but cannot be proven to be all of them. Add **Organization administration: Read** to the token for VERIFIED coverage. **Do not read the non-public findings below as a complete bill of health.**"
+              echo "Coverage: public side **complete and VERIFIED** against the org's declared $dec_pub. Non-public side **UNVERIFIED** — this token cannot read \`total_private_repos\`, so the $enum_priv non-public repositories enumerated here are corroborated by a second, independent listing but cannot be proven to be all of them. That field sits in the owner-only block of the org object, and what exactly gates it is **not established** (measured: absent under every non-member token tried, present under both org-owner tokens tried, one of them without \`admin:org\`). Adding **Organization administration: Read** to a fine-grained token is the suggested route to VERIFIED coverage and is **untested here**. **Do not read the non-public findings below as a complete bill of health.**"
             fi
             echo
             echo "Pin-drift and run-health findings below are **reported, not gated** — see the follow-up in the PR that introduced them. Only an incomplete enumeration fails this job."
@@ -1019,7 +1273,7 @@ jobs:
             echo
             echo "### Check 6 — pin drift, public repositories"
             echo
-            echo "\`ahead\` is commits to the whole repo; \`stale effective\` is the workflows actually changed since the pin, **including the siblings \`required.yml\` pulls in via \`./\`**, which GitHub resolves at the caller's pinned ref. \`stale-30d\` at $PIN_WARN_DAYS days, \`STALE-90d\` at $PIN_FAIL_DAYS. \`current\` includes a pin sitting exactly on main's HEAD (compare status \`identical\`) — the best possible state. \`UNKNOWN\` means the compare response's changed-file list was absent or truncated (cap $CMP_FILE_CAP files / $CMP_COMMIT_CAP commits), so the effective surface could not be intersected and the pin is **not** claimed current."
+            echo "\`ahead\` is commits to the whole repo; \`stale effective\` is the workflows actually changed since the pin, **including the siblings \`required.yml\` pulls in via \`./\`**, which GitHub resolves at the caller's pinned ref. \`stale-30d\` at $PIN_WARN_DAYS days, \`STALE-90d\` at $PIN_FAIL_DAYS. \`current\` includes a pin sitting exactly on main's HEAD (compare status \`identical\`) — the best possible state. \`UNKNOWN\` means the effective surface could not be judged, so the pin is **not** claimed current: either the compare response's changed-file list was absent or truncated (cap $CMP_FILE_CAP files), or the target did change but the pinned commit carries no readable date to apply a threshold to. A compare whose **commit** page is truncated (cap $CMP_COMMIT_CAP) is **not** UNKNOWN — \`.files\` is the whole \`base...head\` diff and is unaffected by commit truncation, so the precision filter still applies and the truncation is noted in the last column instead."
             echo
             echo "| sev | repo | caller | pin | pinned at | days | ahead | stale effective |"
             echo "| --- | --- | --- | --- | --- | --- | --- | --- |"
@@ -1049,12 +1303,17 @@ jobs:
             echo
             echo "| severity | meaning | counted as a finding |"
             echo "| --- | --- | --- |"
-            echo "| \`STALE\` | scheduled, and no green run within its derived window | yes |"
+            echo "| \`STALE\` | scheduled, and no green run within its derived window — **overdue by cadence** | yes |"
+            echo "| \`FAILING\` | its **last run did not succeed**, and it is not already overdue. Asked of every workflow, **scheduled or not** | yes |"
             echo "| \`NEVER-GREEN\` | has run, has never once succeeded | yes |"
             echo "| \`NEVER-RUN\` | scheduled, its own record older than its window, never fired | yes |"
             echo "| \`ORPHAN\` | Actions lists it active, the file is absent from the default branch | yes |"
-            echo "| \`ON-DEMAND\` | no schedule — elapsed days say nothing, so it is **not** judged on them | no |"
+            echo "| \`ON-DEMAND\` | no schedule **and its last run was green** — elapsed days say nothing, so it is **not** judged on them | no |"
             echo "| \`NEW\` | never run, and not yet past its window (or dispatch-only) | no |"
+            echo
+            echo "\`STALE\` and \`FAILING\` answer **two independent questions**, and only the first is cadence-dependent: *is it overdue against its own schedule*, and *did its last run fail*. Cadence governs only whether elapsed time counts against a workflow — it never makes a red run acceptable. An earlier revision collapsed the two, so a \`workflow_dispatch\`-only workflow with a failing last run rendered a clean \`ON-DEMAND\` row. A workflow that is overdue **and** red is listed once, as \`STALE\`; the cadence-independent count below still sees it."
+            echo
+            echo "**$health_last_run_failed** active lock workflows across all repositories have a **non-green last run**, counted independently of the severity fold above and of cadence. That count carries no repository name, so it spans both visibility tiers."
             echo
             echo "| sev | repo | workflow | last run | last green | window | agent |"
             echo "| --- | --- | --- | --- | --- | --- | --- |"
@@ -1065,10 +1324,11 @@ jobs:
             echo "| bucket | findings |"
             echo "| --- | --- |"
             echo "| stale (scheduled, no green run inside its derived window) | ${np_stale:-0} |"
+            echo "| failing (last run not green, not already overdue; any cadence) | ${np_failing:-0} |"
             echo "| never green (has run, has never once succeeded) | ${np_never_green:-0} |"
             echo "| never run (scheduled, past its window, never fired) | ${np_never_run:-0} |"
             echo "| orphaned record (listed active, file absent) | ${np_orphan:-0} |"
-            echo "| **total** | **$(( ${np_stale:-0} + ${np_never_green:-0} + ${np_never_run:-0} + ${np_orphan:-0} ))** |"
+            echo "| **total** | **$(( ${np_stale:-0} + ${np_failing:-0} + ${np_never_green:-0} + ${np_never_run:-0} + ${np_orphan:-0} ))** |"
             echo
             echo "Worst age of a non-public workflow that has been green at least once: **${np_health_worst:-0}** days."
             echo
@@ -1094,7 +1354,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           echo "sweep: $affected/$enum_pub public with findings, $unreadable unreadable; $np_affected non-public with findings"
-          echo "sweep: pins=$pin_total no-version=$pin_nover drifting=$pin_bad; run-health findings=$health_bad; non-public coverage=$priv_mode"
+          echo "sweep: pins=$pin_total no-version=$pin_nover drifting=$pin_bad; run-health findings=$health_bad (non-green last run, counted independently of cadence: $health_last_run_failed); non-public coverage=$priv_mode"
 
           # GATE. Deliberately narrow for this cycle.
           #
