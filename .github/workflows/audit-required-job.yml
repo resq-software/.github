@@ -148,6 +148,20 @@ jobs:
           # worse, as a pass.
           all_rows=$(gh api --paginate "/orgs/$ORG/repos?type=all&per_page=100" \
             --jq '.[] | (if .private then "private" else "public" end)')
+          # N-D: TWO DIFFERENT POPULATIONS, AND THE ISSUE NAMED THE WRONG ONE.
+          # `all_rows` is deliberately UNFILTERED by archive status, because
+          # `public_repos` on the org object counts archived repositories and
+          # the completeness arithmetic has to compare like with like. The
+          # per-repo read loop, however, iterates `repo_rows`, which IS
+          # filtered. So `enum_pub + enum_priv` is the count of ALL
+          # repositories, and rendering it as "All N non-archived
+          # repositories were enumerated and read" was wrong twice over: they
+          # are not all non-archived, and the archived ones were not read.
+          # Today the org has zero archived repositories, so the two numbers
+          # coincide and the defect is latent; that is not a reason to
+          # publish a sentence that is false the moment one is archived.
+          # Both counts are published, each described as what it is.
+          scanned=$(printf '%s\n' "$repo_rows" | grep -c . || true)
           enum_pub=$(printf  '%s\n' "$all_rows" | grep -cx public  || true)
           enum_priv=$(printf '%s\n' "$all_rows" | grep -cx private || true)
           dec_pub=$(gh api "/orgs/$ORG"  --jq '.public_repos        // "null"' 2>/dev/null || echo null)
@@ -220,7 +234,16 @@ jobs:
           # the public-only-token branch below.
           cov_unreadable_unknown=0
 
-          if [ "$dec_pub" != null ] && [ "$enum_pub" -lt "$dec_pub" ]; then
+          if [ "$dec_pub" = null ]; then
+            # `public_repos` is a PUBLIC field on the org object and is always
+            # readable by a working token, so `null` here means the read
+            # FAILED — and the public side of the arithmetic below did not
+            # run. Silently skipping it leaves `complete` standing on one
+            # side's evidence, which is the same false-clean shape as every
+            # other defect this file has been through. Raise the state.
+            echo "::warning::/orgs/$ORG did not return .public_repos, so the PUBLIC side of the coverage arithmetic did not run on this audit. Coverage cannot be reported complete."
+            cov_raise UNVERIFIED
+          elif [ "$enum_pub" -lt "$dec_pub" ]; then
             cov_shortfall=$(( cov_shortfall + dec_pub - enum_pub ))
             cov_raise PARTIAL
           fi
@@ -382,6 +405,7 @@ jobs:
             echo "cov_readfail=$cov_readfail"
             echo "cov_unreadable_unknown=$cov_unreadable_unknown"
             echo "cov_enum=$((enum_pub + enum_priv))"
+            echo "cov_scanned=$scanned"
             echo "gap_list<<GAPEOF"
             printf '%s' "${gap_list:-*(none)*
           }"
@@ -419,6 +443,7 @@ jobs:
           COV_SHORTFALL: ${{ steps.scan.outputs.cov_shortfall }}
           COV_READFAIL: ${{ steps.scan.outputs.cov_readfail }}
           COV_ENUM: ${{ steps.scan.outputs.cov_enum }}
+          COV_SCANNED: ${{ steps.scan.outputs.cov_scanned }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           TITLE: 'chore(governance): required-job audit — missing `required` status-check gates and audit coverage'
         shell: bash
@@ -458,14 +483,30 @@ jobs:
           # to subtract the zero enumeration from — so `COV_SHORTFALL` is 0
           # there. Publishing "PARTIAL, 0 unreadable" understates a whole
           # unread side of the org. Render it as unknown-but-nonzero instead.
-          if [ "${COV_UNREADABLE_UNKNOWN:-0}" = 1 ]; then
-            never_enum="An **unknown, non-zero** number of this org's repositories were **never enumerated**, so they were not audited at all and appear in no list and no count below. The number cannot be given: this token enumerated **0** non-public repositories and cannot read the org's declared non-public count either, so the size of what it did not see is not measurable from inside this run."
-          elif [ "${COV_SHORTFALL:-0}" != 0 ]; then
+          # N-A: REPORT EVERY COUNTER THAT HAS A VALUE. These were an
+          # `if`/`elif`, so the unknown branch SUPPRESSED a shortfall that had
+          # actually been measured. Driven at unknown=1, shortfall=2,
+          # readfail=1, the public issue said only "an unknown, non-zero
+          # number" and the measured **2** never appeared anywhere in it.
+          #
+          # They are not alternatives. `cov_unreadable_unknown` is set only
+          # when the NON-PUBLIC declared count is unreadable, and in exactly
+          # that state `cov_shortfall` can still carry a measured PUBLIC
+          # shortfall. An unknown quantity and a measured one are two facts,
+          # and a reader who is told only the vaguer of them is worse off
+          # than one told both. Both sentences are rendered whenever both
+          # hold, in the order measured-then-unknown so the issue leads with
+          # the number a reader can act on.
+          never_enum=""
+          if [ "${COV_SHORTFALL:-0}" != 0 ]; then
             if [ "${COV_SHORTFALL}" = 1 ]; then ne_v="was"; ne_p="it was"; ne_a="appears"
             else                                ne_v="were"; ne_p="they were"; ne_a="appear"; fi
             never_enum="**${COV_SHORTFALL}** of this org's repositories $ne_v **never enumerated** — the org declares more than this token could list — so $ne_p not audited at all and $ne_a in no list and no count below."
+          fi
+          if [ "${COV_UNREADABLE_UNKNOWN:-0}" = 1 ]; then
+            unknown_enum="**In addition, and separately from any number above**, an **unknown, non-zero** number of this org's **non-public** repositories were **never enumerated**, so they were not audited at all and appear in no list and no count below. That number cannot be given: this token enumerated **0** non-public repositories and cannot read the org's declared non-public count either, so the size of what it did not see is not measurable from inside this run."
           else
-            never_enum=""
+            unknown_enum=""
           fi
           if [ "${COV_READFAIL:-0}" != 0 ]; then
             if [ "${COV_READFAIL}" = 1 ]; then rf_n="repository **was**"; rf_d="it **is**"; else rf_n="repositories **were**"; rf_d="those **are**"; fi
@@ -474,7 +515,7 @@ jobs:
             read_failed=""
           fi
           cov_detail=""
-          for s in "$never_enum" "$read_failed"; do
+          for s in "$never_enum" "$unknown_enum" "$read_failed"; do
             [ -n "$s" ] || continue
             cov_detail="${cov_detail:+$cov_detail }$s"
           done
@@ -484,11 +525,11 @@ jobs:
 
           case "$COV_STATE" in
             complete)
-              coverage="Coverage: **complete**. All ${COV_ENUM} non-archived repositories in the org were enumerated and read."
+              coverage="Coverage: **complete**. All **${COV_ENUM}** repositories the org declares were enumerated — that count is deliberately **unfiltered by archive status**, because \`public_repos\` on the org object includes archived repositories and the completeness arithmetic has to compare like with like — and the **${COV_SCANNED}** **non-archived** ones among them, which are the audit's actual scope, were each read."
               ;;
             UNVERIFIED)
               coverage="> [!NOTE]
-          > **Coverage of non-public repositories is UNVERIFIED.** ${COV_ENUM} non-archived repositories were enumerated and read, but \`total_private_repos\` is not readable by this token, so the audit cannot prove it saw every non-public repository. That field sits in the owner-only block of the org object; what exactly gates it is **not established here** — measured against this org, it was absent for every non-member token tried and present for both org-owner tokens tried, including one without \`admin:org\` scope, so it is not the \`admin:org\` scope that exposes it. Adding **Organization administration: Read** to a fine-grained token is the suggested remedy but was **not tested**. Names are withheld: this issue is public."
+          > **Coverage of non-public repositories is UNVERIFIED.** ${COV_ENUM} repositories were enumerated (a count that deliberately **includes archived** ones, to match \`public_repos\`) and the ${COV_SCANNED} **non-archived** ones among them — the audit's actual scope — were each read, but \`total_private_repos\` is not readable by this token, so the audit cannot prove it saw every non-public repository. That field sits in the owner-only block of the org object; what exactly gates it is **not established here** — measured against this org, it was absent for every non-member token tried and present for both org-owner tokens tried, including one without \`admin:org\` scope, so it is not the \`admin:org\` scope that exposes it. Adding **Organization administration: Read** to a fine-grained token is the suggested remedy but was **not tested**. Names are withheld: this issue is public."
               ;;
             *)
               coverage="> [!WARNING]

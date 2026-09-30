@@ -234,7 +234,32 @@ jobs:
             if (s != "") print s
           }
           AWK
-          awk -f "$RUNNER_TEMP/sweep/pins.awk" </dev/null
+          # Self-test the PIN parser at runtime. It had none: the only
+          # exercise it got was `awk -f pins.awk </dev/null`, which proves the
+          # program compiles and nothing else. check 6's entire output is this
+          # parser's output, and the loop that consumes it is fed by process
+          # substitution, whose producer's exit status bash discards — so a
+          # regression here produces "0 pins" and a clean pin-drift table
+          # rather than an error. Positive controls first, so a matcher that
+          # has stopped matching fails here instead of reporting conformance.
+          pinsawk() { printf '%b' "$1" | awk -f "$RUNNER_TEMP/sweep/pins.awk"; }
+          # positive: a 40-hex pin with a trailing version comment
+          [ "$(pinsawk '    uses: resq-software/.github/.github/workflows/required.yml@0123456789abcdef0123456789abcdef01234567 # v1.2.3\n')" \
+            = "$(printf 'required.yml\t0123456789abcdef0123456789abcdef01234567\tsha40\tv1.2.3')" ]
+          # positive: no version comment at all -> empty 4th field
+          [ "$(pinsawk 'uses: resq-software/.github/.github/workflows/node-ci.yml@0123456789abcdef0123456789abcdef01234567\n')" \
+            = "$(printf 'node-ci.yml\t0123456789abcdef0123456789abcdef01234567\tsha40\t')" ]
+          # positive: a short sha and a branch ref are classified apart
+          [ "$(pinsawk 'uses: resq-software/.github/.github/workflows/rust-ci.yml@0123456\n' | cut -f3)" = SHORT-SHA ]
+          [ "$(pinsawk 'uses: resq-software/.github/.github/workflows/rust-ci.yml@main\n'    | cut -f3)" = NOT-A-SHA ]
+          # positive: a second comment after the version must not eat it
+          [ "$(pinsawk 'uses: resq-software/.github/.github/workflows/cpp-ci.yml@0123456789abcdef0123456789abcdef01234567 # v2.0.0  # zizmor: ignore[x]\n' | cut -f4)" = v2.0.0 ]
+          # negative: a commented-out pin is not a pin
+          [ -z "$(pinsawk '  # uses: resq-software/.github/.github/workflows/required.yml@0123456789abcdef0123456789abcdef01234567 # v1.2.3\n')" ]
+          # negative: another org's reusable workflow is not ours
+          [ -z "$(pinsawk '  uses: someone-else/.github/.github/workflows/required.yml@0123456789abcdef0123456789abcdef01234567\n')" ]
+          # negative: empty input emits nothing and exits 0
+          [ -z "$(pinsawk '')" ]
           # Self-test the cadence derivation at runtime. Check 7's whole
           # correctness now rests on it, and a silent regression here would
           # turn back into the wall-clock false positives it replaces.
@@ -325,12 +350,134 @@ jobs:
           fi
           echo "sweep: token=$token_used"
 
-          # Print a repo file's contents; empty if absent OR unreadable. The
-          # caller must have already established readability via ls_workflows,
-          # so an empty result here means "absent".
+          # ---- ONE MECHANISM FOR EVERY DEGRADABLE READ ---------------------
+          #
+          # Four review rounds have surfaced the same defect shape here, not
+          # four different defects: a read fails, its error is discarded, the
+          # code carries on with an empty value, and the empty value is
+          # indistinguishable from a genuinely empty answer — so the report
+          # says clean. Confirmed instances: the 2026-09-28 false-clean run;
+          # compare status `identical` read as drift; an absent `.files` key
+          # read as "current"; UNVERIFIED clobbering PARTIAL; an in-flight run
+          # read as failed; the GraphQL corroboration failing silently while
+          # the summary claimed corroboration; the Actions workflow listing
+          # 403-ing into "zero findings"; and the per-file contents read
+          # 403-ing into "zero pins".
+          #
+          # Each of those was fixed on its own, with its own guard, and the
+          # next one appeared somewhere else. The guards are therefore
+          # replaced by ONE mechanism, so that there is exactly one place to
+          # get right and a reviewer can enumerate the call sites by grepping
+          # for it:
+          #
+          #   gh_read   runs `gh api`, and NEVER swallows the failure. It
+          #             separates the two outcomes that were being conflated:
+          #               rc 0  the call succeeded; the body is on stdout
+          #               rc 1  HTTP 404 — the resource is genuinely ABSENT.
+          #                     A legitimate answer for `contents/...` and
+          #                     `releases/latest`, and the ONLY failure a
+          #                     caller may treat as information.
+          #               rc 2  anything else (403, 5xx, rate limit, network,
+          #                     an unparseable response). NOTHING is known.
+          #             Because it is used as `if v=$(gh_read ...)`, a caller
+          #             that forgets to branch does not compile into a silent
+          #             empty string: under `set -e` the bare assignment form
+          #             aborts the step instead.
+          #
+          #   note_unassessed  records "check C did not run on repo R, because
+          #             W" as a counted, rendered, annotated outcome in BOTH
+          #             visibility tiers. This is the part that makes the
+          #             difference visible: "no findings" and "not assessed"
+          #             are now different strings in the summary, different
+          #             numbers in the step log, and an annotation versus no
+          #             annotation.
+          #
+          # The status is read back from a file, not from a variable: every
+          # caller invokes gh_read inside a command substitution, and a
+          # subshell's variable assignments do not survive it.
+          GH_STF="$RUNNER_TEMP/sweep/gh.st"
+          : > "$GH_STF"
+          gh_read() {
+            local out err st
+            if out=$(gh api "$@" 2>"$RUNNER_TEMP/sweep/gh.err"); then
+              printf '%s' "$out"
+              printf '0\t\n' > "$GH_STF"
+              return 0
+            fi
+            err=$(tr -d '\r' < "$RUNNER_TEMP/sweep/gh.err" | tr '\n' ' ' \
+                  | sed 's/  */ /g; s/^ //; s/ $//' | cut -c1-160)
+            # `gh` reports HTTP failures as `gh: <message> (HTTP NNN)`. A jq
+            # or transport failure carries no such suffix, and is treated as
+            # "unknown status", which classifies as rc 2 — the safe side.
+            st=$(printf '%s' "$err" | sed -n 's/.*(HTTP \([0-9][0-9]*\)).*/\1/p')
+            printf '%s\t%s\n' "${st:-none}" "$err" > "$GH_STF"
+            if [ "$st" = 404 ]; then return 1; fi
+            return 2
+          }
+          # Public-SAFE reason: the HTTP status only. Never the gh message,
+          # which is echoed for public repositories alone.
+          gh_why()    { printf 'HTTP %s' "$(cut -f1 "$GH_STF")"; }
+          gh_detail() { cut -f2 "$GH_STF"; }
+          # Runtime self-test of the classifier, for the same reason the awk
+          # parsers have one: `(HTTP NNN)` is gh's output format, not a
+          # contract, and if it ever changes then every 403 in this file
+          # silently reclassifies as a 404 — which is to say, as "absent",
+          # which is to say, as clean. One throwaway call proves the matcher
+          # is still matching. A repository name that cannot exist: the org
+          # slug is a valid name character class but `..` is not.
+          gh_selftest_rc=0
+          gh_read "/repos/$ORG/this..repo..cannot..exist" --jq '.name' >/dev/null \
+            || gh_selftest_rc=$?
+          gh_selftest_st=$(cut -f1 "$GH_STF")
+          if [ "$gh_selftest_rc" -ne 1 ] || [ "$gh_selftest_st" != 404 ]; then
+            echo "::error title=org-conformance-sweep::gh_read self-test: expected rc=1 status=404 for an impossible repository, got rc=$gh_selftest_rc status=$gh_selftest_st. gh's error format has changed, so this job can no longer tell 'absent' from 'unreadable' — and would report every unreadable repository as clean. Refusing to run."
+            exit 1
+          fi
+          echo "sweep: gh_read classifier OK (impossible repo -> rc=1/HTTP 404; every other failure classifies as unreadable)"
+
+          # Records that a check DID NOT RUN on a repository. Not a finding
+          # about the repository — a failure of this sweep — and deliberately
+          # not foldable into either. Both tiers, no non-public name anywhere:
+          # tier 2 gets the check label and the HTTP status, which carry none.
+          # $1 repo  $2 visibility  $3 check label  $4 public-SAFE why
+          # $5 public-only detail (optional; omitted for a non-gh failure)
+          #
+          # `$4` is passed explicitly rather than read from `gh_why` inside,
+          # because not every unassessed outcome comes from a gh call — the
+          # parser-failure path has no HTTP status, and inheriting the last
+          # one would attribute it to an unrelated request.
+          note_unassessed() {
+            local r="$1" vis="$2" chk="$3" why="$4" detail="${5:-}"
+            unassessed=$((unassessed + 1))
+            repo_unassessed=1
+            unassessed_kinds="${unassessed_kinds}${chk} — ${why}"$'\n'
+            if [ "$vis" = public ]; then
+              unassessed_rows="${unassessed_rows}| \`$r\` | $chk | $why | ${detail:-—} |"$'\n'
+              echo "::warning title=org-conformance-sweep::$r — NOT ASSESSED: $chk — $why${detail:+: $detail}"
+            else
+              # Tier 2. The check label and the HTTP status carry no name; the
+              # repository name and gh's message are never written here at all.
+              np_unassessed=$((np_unassessed + 1))
+              echo "::warning title=org-conformance-sweep::a non-public repository — NOT ASSESSED: $chk — $why (repository name and gh message withheld — this log is public)"
+            fi
+          }
+
+          # Print a repo file's contents.
+          #   rc 0  read succeeded; the decoded body is on stdout
+          #   rc 1  HTTP 404 — the file is genuinely absent
+          #   rc 2  the read failed; NOTHING is known about the file
+          # The old contract — "empty means absent, because the caller
+          # established readability via ls_workflows" — was false for a
+          # TRANSIENT failure: the listing can succeed and an individual file
+          # read still 403 or 5xx. Reproduced by injecting HTTP 403 on
+          # `contents/.github/workflows/ci.yml` alone, with the listing left
+          # working: the caller file was skipped, check 6 never saw it, and
+          # the sweep reported `pins=0 drifting=0` with the STALE-90d row and
+          # its annotation both gone.
           fetch() {
-            gh api "/repos/$ORG/$1/contents/$2" --jq '.content' 2>/dev/null \
-              | base64 -d 2>/dev/null || true
+            local b64
+            b64=$(gh_read "/repos/$ORG/$1/contents/$2" --jq '.content') || return $?
+            printf '%s' "$b64" | base64 -d 2>/dev/null || true
           }
 
           # Readability is established against the repo object itself, not the
@@ -342,10 +489,21 @@ jobs:
             gh api "/repos/$ORG/$1" --jq '.name' >/dev/null 2>&1
           }
 
-          # Workflow filenames, or empty when the directory does not exist.
+          # Workflow filenames.
+          #   rc 0  listing succeeded (possibly empty, if the directory is)
+          #   rc 1  HTTP 404 — the repo has no `.github/workflows` directory
+          #   rc 2  the listing failed
+          # rc 1 and rc 2 used to be the same empty string, and the caller's
+          # `[ -n "$wf" ] || continue` then jumped past checks 1-6 AND check 7
+          # for that repository while `total` had already counted it. Injected
+          # HTTP 403 on this listing for a repo carrying a 637-day-stale pin,
+          # a missing dependabot ignore, a release behind a tag and a STALE
+          # lock workflow: the run exited 0 and its step-log trailer was
+          # BYTE-IDENTICAL to the trailer of a repo that genuinely has no
+          # workflows.
           ls_workflows() {
-            gh api "/repos/$ORG/$1/contents/.github/workflows" \
-              --jq '[.[].name] | join(" ")' 2>/dev/null || true
+            gh_read "/repos/$ORG/$1/contents/.github/workflows" \
+              --jq '[.[].name] | join(" ")'
           }
 
           # Effective `actions: read` for the job that calls the reusable scan.
@@ -490,9 +648,18 @@ jobs:
           #
           # Retried, because `unavailable` now changes what the report says
           # and one transient error should not rewrite the conclusion.
-          gql_pub=null; gql_priv=null; gql_err=''
+          # N-B: THE MESSAGE MUST MATCH WHAT ACTUALLY HAPPENED. The loop
+          # below breaks as soon as EITHER side returns a count, so a partial
+          # response (exit 0, one `totalCount` null) leaves after attempt 1 —
+          # while the warning and the summary both asserted "after 3 attempts"
+          # and "it corroborates NOTHING on this run". Neither was true: one
+          # attempt was made, and that response corroborated one of the two
+          # sides. The attempt count is now recorded rather than assumed, and
+          # the sentences are chosen by which sides actually came back.
+          gql_pub=null; gql_priv=null; gql_err=''; gql_attempts=0
           gql_errf="$RUNNER_TEMP/sweep/gql.err"
           for attempt in 1 2 3; do
+            gql_attempts=$attempt
             if gql=$(gh api graphql -f query="query{organization(login:\"$ORG\"){
                          pub:repositories(privacy:PUBLIC){totalCount}
                          priv:repositories(privacy:PRIVATE){totalCount}}}" 2>"$gql_errf"); then
@@ -509,6 +676,10 @@ jobs:
             gql_err=$(tr -d '\r' < "$gql_errf" | tr '\n' ' ' | sed 's/  */ /g; s/^ //; s/ $//' | cut -c1-200)
             [ "$attempt" -eq 3 ] || sleep 5
           done
+          # Plural agreement, and the honest reason when there is none: a
+          # partial response is not an error, so `gql_err` is legitimately
+          # empty there and the message must not imply a transport failure.
+          if [ "$gql_attempts" -eq 1 ]; then gql_tries="1 attempt"; else gql_tries="$gql_attempts attempts"; fi
 
           corr_pub=unavailable; corr_priv=unavailable
           for side in pub priv; do
@@ -530,8 +701,21 @@ jobs:
               priv) corr_priv=$st ;;
             esac
           done
-          if [ "$corr_pub" = unavailable ] || [ "$corr_priv" = unavailable ]; then
-            echo "::warning title=org-conformance-sweep::the independent GraphQL listing returned no count (public: $corr_pub, non-public: $corr_priv) after 3 attempts, so it corroborates NOTHING on this run.${gql_err:+ gh reported: $gql_err}"
+          # Three shapes, because three things can have happened, and the
+          # earlier single sentence was wrong for two of them.
+          gql_scope=''
+          if [ "$corr_pub" = unavailable ] && [ "$corr_priv" = unavailable ]; then
+            gql_scope="so it corroborates NOTHING on this run"
+          elif [ "$corr_priv" = unavailable ]; then
+            gql_scope="so the NON-PUBLIC side is uncorroborated on this run; the public side did come back and is $corr_pub"
+          elif [ "$corr_pub" = unavailable ]; then
+            gql_scope="so the PUBLIC side is uncorroborated on this run; the non-public side did come back and is $corr_priv"
+          fi
+          if [ -n "$gql_scope" ]; then
+            if [ -n "$gql_err" ]; then gql_cause=" gh reported: $gql_err"
+            else                       gql_cause=" The call itself succeeded — GraphQL returned a null totalCount for that side, which is not a transport failure and has no gh error to report."
+            fi
+            echo "::warning title=org-conformance-sweep::the independent GraphQL listing returned no count for at least one side (public: $corr_pub, non-public: $corr_priv) after $gql_tries, $gql_scope.${gql_cause}"
           fi
 
           if [ "$dec_priv" != null ]; then
@@ -583,7 +767,7 @@ jobs:
               echo "| non-public | ${dec_priv/null/_not readable_} | $enum_priv | ${gql_priv/null/_no count returned_} | $corr_priv |"
               if [ -n "$gql_err" ]; then
                 echo
-                echo "The independent GraphQL listing returned no count after 3 attempts. \`gh\` reported: \`$gql_err\`"
+                echo "The independent GraphQL listing returned no count after $gql_tries. \`gh\` reported: \`$gql_err\`"
               fi
               echo
               echo "Grant the existing org secret \`SYNC_TOKEN\` to this repository, or create \`ORG_READ_TOKEN\` org-wide — fine-grained, **Metadata: Read + Contents: Read + Actions: Read**."
@@ -620,10 +804,24 @@ jobs:
           # zero. Measured: rust-ci@5261ae18 is ahead_by=1 and
           # repo-standards@8fe6c2e4 is ahead_by=4, and neither target changed.
           # Do not drop that filter to simplify — it is what keeps this honest.
-          SIBLINGS=$(gh api "/repos/$ORG/.github/contents/.github/workflows/required.yml" \
-                       --jq '.content' | base64 -d \
+          # Unguarded, this was a bare command substitution: under `set -e` a
+          # failed read aborts the step with NO message, and under a shell
+          # without it the sibling set silently becomes empty, which turns
+          # every `required.yml` pin's transitive surface back into the direct
+          # one and under-reports exactly the oldest pins. Neither is
+          # acceptable, so the failure is named and fatal — this is a
+          # prerequisite of check 6 across the whole org, not a per-repo read.
+          if ! req_b64=$(gh_read "/repos/$ORG/.github/contents/.github/workflows/required.yml" --jq '.content'); then
+            echo "::error title=org-conformance-sweep::cannot read required.yml at main ($(gh_why): $(gh_detail)). Check 6's transitive sibling set is derived from it, and guessing it would under-report the oldest pins. Refusing to run a check 6 that silently narrows its own scope."
+            exit 1
+          fi
+          SIBLINGS=$(printf '%s' "$req_b64" | base64 -d \
                      | sed -n 's|^[[:space:]]*uses:[[:space:]]*\./\.github/workflows/\([A-Za-z0-9._-]*\).*|\1|p' \
                      | sort -u | tr '\n' ' ')
+          if [ -z "$SIBLINGS" ]; then
+            echo "::error title=org-conformance-sweep::required.yml at main names no \`./.github/workflows/...\` siblings. Either the file changed shape or the extractor stopped matching; both make check 6's transitive surface wrong. Refusing to run."
+            exit 1
+          fi
           echo "sweep: required.yml siblings at main: $SIBLINGS"
 
           # Thresholds. The org contract says "more than one minor version
@@ -704,7 +902,15 @@ jobs:
           compare_ref() {
             local ref="$1" j nfiles ncommits total
             if [ -n "${CMP_ST[$ref]:-}" ]; then return 0; fi
-            j=$(gh api "/repos/$ORG/.github/compare/$ref...main" 2>/dev/null) || return 1
+            if ! j=$(gh_read "/repos/$ORG/.github/compare/$ref...main"); then
+              # UNRESOLVABLE is already a counted, rendered, annotated
+              # severity, so this failure is visible either way. What was
+              # missing is WHY: a 404 (the ref is gone from this repo) and a
+              # 403 or 5xx (the compare could not be read at all) are
+              # different problems with different fixes, and the row said
+              # neither. `gh_why` is consulted by the caller.
+              return 1
+            fi
             CMP_ST[$ref]=$(printf '%s' "$j" | jq -r '.status')
             CMP_AHEAD[$ref]=$(printf '%s' "$j" | jq -r '.ahead_by // 0')
             CMP_DATE[$ref]=$(printf '%s' "$j" | jq -r '.base_commit.commit.committer.date // empty')
@@ -748,6 +954,17 @@ jobs:
           check_pins() {
             local r="$1" vis="$2" f="$3" body="$4"
             local wf ref kind ver eff e stale sev days pinned_at ahead note age age_h why d
+            local parsed
+            # THE PRODUCER'S EXIT STATUS. `done < <(... | awk -f "$AWK_PINS")`
+            # discards it: a missing or unreadable `$AWK_PINS`, a bad
+            # `$RUNNER_TEMP`, or an awk syntax regression simply feeds the
+            # loop nothing, `check_pins` returns 0, and the whole pin-drift
+            # check reports zero pins across the entire org. Run the parser
+            # first, into a variable, where the status can be seen.
+            if ! parsed=$(printf '%s\n' "$body" | awk -f "$AWK_PINS"); then
+              note_unassessed "$r" "$vis" "check 6 (pin drift) on one caller file" "pins parser exited non-zero"
+              return 0
+            fi
             while IFS=$'\t' read -r wf ref kind ver; do
               if [ -z "$wf" ]; then continue; fi
               pin_total=$((pin_total + 1))
@@ -767,6 +984,7 @@ jobs:
                 esac
               elif ! compare_ref "$ref"; then
                 sev=UNRESOLVABLE
+                note="compare unreadable ($(gh_why))"
               else
                 # N9: `days_since` validates the parse, so a compare that
                 # carries no base commit OR carries an unparseable one leaves
@@ -831,8 +1049,14 @@ jobs:
               # claim the code is in any position to make on those paths. Say
               # what actually happened instead, per path, explicitly.
               case "$sev" in
-                UNPINNED|SHORT-SHA|UNRESOLVABLE)
+                UNPINNED|SHORT-SHA)
                   why="not compared" ;;
+                UNRESOLVABLE)
+                  # N10's "say what actually happened" applied to this path
+                  # too: a 404 (the ref no longer exists in this repo) and a
+                  # 403/5xx (the compare could not be read) are different
+                  # problems, and "not compared" named neither.
+                  why="${note:-not compared}" ;;
                 *)
                   # `stale` accumulates as " a b c"; drop the leading space so
                   # the cell does not render with a stray indent.
@@ -857,7 +1081,7 @@ jobs:
                 if [ "$days" -gt "${np_pin_worst:-0}" ]; then np_pin_worst=$days; fi
               fi
               :
-            done < <(printf '%s\n' "$body" | awk -f "$AWK_PINS")
+            done < <(printf '%s\n' "$parsed")
             return 0
           }
 
@@ -944,8 +1168,29 @@ jobs:
             local r="$1" vis="$2"
             local id state path created f body hdr agent cver last conc when succ days
             local win age sev finding repo_cvers ndistinct green_cell win_cell
-            local last_run_failed late_by_cadence d
+            local last_run_failed late_by_cadence d wfrows b64
             repo_cvers=""
+            # BLOCKER 1. This listing used to sit inside the process
+            # substitution that feeds the loop below —
+            #   done < <(gh api ".../actions/workflows?..." ... 2>/dev/null || true)
+            # — and `< <(...)` does not propagate its producer's exit status.
+            # A 403 (the header notes the pre-existing SYNC_TOKEN scope lacks
+            # `Actions: Read`), a 404 or a 5xx therefore yielded zero rows,
+            # the loop body never ran, not one counter was touched, and check
+            # 7 contributed nothing at all for that repository — which the
+            # report then rendered as `run-health findings=0`, an empty check-7
+            # table, all five non-public buckets at zero and an emptied
+            # by-agent table. Reproduced by injecting HTTP 403 on this
+            # endpoint alone against a baseline of `run-health findings=2`.
+            #
+            # The listing is now read where its status is visible, and a
+            # failure is a COUNTED, ANNOTATED, RENDERED outcome that is
+            # distinct from "this repository has no lock workflows".
+            if ! wfrows=$(gh_read "/repos/$ORG/$r/actions/workflows?per_page=100" --paginate \
+                            --jq '.workflows[] | [(.id|tostring), .state, .path, (.created_at // "-")] | @tsv'); then
+              note_unassessed "$r" "$vis" "check 7 (run health) — whole repository" "$(gh_why)" "$(gh_detail)"
+              return 0
+            fi
             while IFS=$'\t' read -r id state path created; do
               f=${path##*/}
               case "$f" in *.lock.yml) ;; *) continue ;; esac
@@ -955,15 +1200,33 @@ jobs:
               # workflow as active but the file is gone from the default
               # branch. Calling such a record "failing for 110 days" would be
               # wrong — there is nothing left to fail.
-              body=$(gh api "/repos/$ORG/$r/contents/$path" --jq '.content' 2>/dev/null \
-                     | base64 -d 2>/dev/null || true)
-              if [ -z "$body" ]; then
+              #
+              # ONLY a 404, though. The shipped code took `2>/dev/null |
+              # base64 -d || true` and published EVERY read error — 403, 5xx,
+              # rate limit — as `ORPHAN — file absent from default branch`.
+              # That is a false statement about a file nobody could read, and
+              # it is the secondary half of the same review thread as
+              # BLOCKER 1. The two are told apart now.
+              if b64=$(gh_read "/repos/$ORG/$r/contents/$path" --jq '.content'); then
+                body=$(printf '%s' "$b64" | base64 -d 2>/dev/null || true)
+                if [ -z "$body" ]; then
+                  # Read fine, decoded to nothing: an empty file, or content
+                  # this job cannot decode (a submodule or symlink entry has
+                  # no `.content`). Not absent, and not assessable either.
+                  note_unassessed "$r" "$vis" "check 7 (run health) on one lock workflow" "read succeeded, body decoded empty"
+                  continue
+                fi
+              elif [ "$?" -eq 1 ]; then
                 health_bad=$((health_bad + 1))
                 if [ "$vis" = public ]; then
-                  health_rows="${health_rows}| ORPHAN | \`$r\` | \`$f\` | file absent from default branch | — | — | — |"$'\n'
+                  health_rows="${health_rows}| ORPHAN | \`$r\` | \`$f\` | file absent from default branch (HTTP 404) | — | — | — |"$'\n'
+                  echo "::warning title=org-conformance-sweep::$r $f — ORPHAN (Actions lists it active; the file is absent from the default branch)"
                 else
                   np_orphan=$(( ${np_orphan:-0} + 1 ))
                 fi
+                continue
+              else
+                note_unassessed "$r" "$vis" "check 7 (run health) on one lock workflow" "$(gh_why)" "$(gh_detail)"
                 continue
               fi
               hdr=${body%%$'\n'*}
@@ -980,10 +1243,16 @@ jobs:
 
               win=$(cron_window "$body")
 
-              last=$(gh api "/repos/$ORG/$r/actions/workflows/$id/runs?per_page=1" \
-                       --jq '[.workflow_runs[0].conclusion // "none",
-                              .workflow_runs[0].created_at // "-"] | @tsv' 2>/dev/null \
-                     || printf 'none\t-')
+              # `|| printf 'none\t-'` used to turn an unreadable run list into
+              # `when=-`, which the verdict below reads as "has never run" and
+              # scores `NEW` — not a finding, no annotation, a clean row. An
+              # unreadable run list is not a new workflow.
+              if ! last=$(gh_read "/repos/$ORG/$r/actions/workflows/$id/runs?per_page=1" \
+                            --jq '[.workflow_runs[0].conclusion // "none",
+                                   .workflow_runs[0].created_at // "-"] | @tsv'); then
+                note_unassessed "$r" "$vis" "check 7 (run health) on one lock workflow" "$(gh_why)" "$(gh_detail)"
+                continue
+              fi
               conc=$(printf '%s' "$last" | cut -f1)
               when=$(printf '%s' "$last" | cut -f2)
 
@@ -1007,8 +1276,18 @@ jobs:
                 # green run, and it is what turns "last run failed" into "has
                 # not been green in N days" — the difference between a flake
                 # and a month of rot.
-                succ=$(gh api "/repos/$ORG/$r/actions/workflows/$id/runs?status=success&per_page=1" \
-                         --jq '.workflow_runs[0].created_at // "NEVER"' 2>/dev/null || echo NEVER)
+                # `|| echo NEVER` made an unreadable query indistinguishable
+                # from a workflow that has genuinely never been green, and
+                # `NEVER` scores NEVER-GREEN — a specific, strong claim this
+                # run is in no position to make. The last run's conclusion IS
+                # still known here, so it is still judged; what is unknown is
+                # how long the workflow has been red, and that is recorded as
+                # unassessed rather than asserted.
+                if ! succ=$(gh_read "/repos/$ORG/$r/actions/workflows/$id/runs?status=success&per_page=1" \
+                              --jq '.workflow_runs[0].created_at // "NEVER"'); then
+                  succ=UNREADABLE
+                  note_unassessed "$r" "$vis" "check 7 (age of last green run) on one lock workflow" "$(gh_why)" "$(gh_detail)"
+                fi
               fi
 
               # N9: validated parse. `days` is the age of the last GREEN run.
@@ -1063,6 +1342,15 @@ jobs:
                   # Not rot. Reported, not counted.
                   sev=NEW
                 fi
+              elif [ "$succ" = UNREADABLE ]; then
+                # The last-green query failed. `days` is -1 for the same
+                # reason a never-green workflow's is, and the shipped code
+                # could not tell them apart — so it published NEVER-GREEN,
+                # a claim about a query that never answered. The last run's
+                # conclusion is known and is still judged; the age is not.
+                if [ "$last_run_failed" = yes ]; then sev=FAILING; finding=yes
+                else                                  sev=UNASSESSED
+                fi
               elif [ "$days" -lt 0 ]; then
                 # Has run, has never once succeeded. A finding regardless of
                 # cadence: there is nothing to be early or late for.
@@ -1092,7 +1380,10 @@ jobs:
                 health_last_run_failed=$((health_last_run_failed + 1))
               fi
 
-              if [ "$days" -ge 0 ]; then green_cell="${succ:0:10} (${days}d)"; else green_cell=never; fi
+              if [ "$days" -ge 0 ];             then green_cell="${succ:0:10} (${days}d)"
+              elif [ "$succ" = UNREADABLE ];      then green_cell="_not readable_"
+              else                                     green_cell=never
+              fi
               if [ "$win" -gt 0 ];  then win_cell="${win}d";                  else win_cell="no schedule"; fi
 
               case "$sev" in
@@ -1118,8 +1409,7 @@ jobs:
                   ;;
               esac
               :
-            done < <(gh api "/repos/$ORG/$r/actions/workflows?per_page=100" --paginate \
-                       --jq '.workflows[] | [(.id|tostring), .state, .path, (.created_at // "-")] | @tsv' 2>/dev/null || true)
+            done < <(printf '%s\n' "$wfrows")
 
             # Per-repo, name-free: does this repo carry more than one gh-aw
             # compiler version in-tree?
@@ -1128,6 +1418,12 @@ jobs:
             return 0
           }
 
+          # "A check did not run" is its own outcome, tracked apart from both
+          # "no findings" and "the repository is unreadable". `unassessed`
+          # counts check/repository PAIRS; `unassessed_repos` counts distinct
+          # repositories, raised once per repository by the loop below.
+          unassessed=0 unassessed_repos=0 np_unassessed=0
+          unassessed_rows="" unassessed_kinds="" repo_unassessed=0
           total=0 affected=0 unreadable=0 np_affected=0 np_unreadable=0
           conf_rows="" conf_kinds=""
           pin_rows="" nover_rows="" np_pin_sev="" np_pin_worst=0
@@ -1163,6 +1459,7 @@ jobs:
             total=$((total + 1))
             findings=""
             kinds=""
+            repo_unassessed=0
 
             # Establish readability first. A repo we cannot read is reported as
             # such — never counted as clean.
@@ -1176,8 +1473,28 @@ jobs:
               fi
               continue
             fi
-            wf=$(ls_workflows "$r")
-            [ -n "$wf" ] || continue
+            # THREE OUTCOMES, NOT TWO. `wf=$(ls_workflows "$r")` followed by
+            # `[ -n "$wf" ] || continue` collapsed "this repo has no
+            # `.github/workflows` directory" and "this listing could not be
+            # read" into the same empty string, and the `continue` then jumped
+            # past checks 1-4, check 5, check 6 AND check 7 — for a repository
+            # `total` had already counted. Measured against a repo carrying a
+            # 637-day-stale pin, a missing dependabot ignore, a release behind
+            # a tag and a STALE lock workflow: with HTTP 403 injected on this
+            # listing alone the run exited 0 and its step-log trailer was
+            # BYTE-IDENTICAL to the trailer of a repo that genuinely has none.
+            #
+            # The unreadable case is now counted and rendered. And the two
+            # checks that never needed the listing in the first place — check
+            # 5 (release versus tag) and check 7 (run health, which reads the
+            # Actions API) — run either way, instead of being skipped along
+            # with it.
+            wf=""
+            if ls_out=$(ls_workflows "$r"); then
+              wf="$ls_out"
+            elif [ "$?" -eq 2 ]; then
+              note_unassessed "$r" "$vis" "checks 1-4 and 6 (workflow directory listing)" "$(gh_why)" "$(gh_detail)"
+            fi
 
             # One pass over the non-lock workflows. Previously security.yml was
             # fetched twice (check 1 and check 4); the bodies are reused here by
@@ -1186,7 +1503,16 @@ jobs:
             uses_zima=no
             for f in $wf; do
               case "$f" in *.lock.yml) continue ;; *.yml|*.yaml) ;; *) continue ;; esac
-              wfbody=$(fetch "$r" ".github/workflows/$f")
+              # This file was just LISTED, so neither an absent file (404 — a
+              # race with a push) nor an unreadable one (403/5xx) is the
+              # "nothing to see here" the old `[ -n "$wfbody" ] || continue`
+              # made of both. Injected HTTP 403 on one caller file with the
+              # listing left working: `pins=0 drifting=0`, and the STALE-90d
+              # row and its annotation both disappeared.
+              if ! wfbody=$(fetch "$r" ".github/workflows/$f"); then
+                note_unassessed "$r" "$vis" "checks 1, 4 and 6 on one caller file" "$(gh_why)" "$(gh_detail)"
+                continue
+              fi
               [ -n "$wfbody" ] || continue
               [ "$f" = security.yml ] && sec="$wfbody"
               # 4. `zima` used as a LITERAL runs-on label without actionlint
@@ -1221,7 +1547,15 @@ jobs:
 
             if [ -n "$locks" ]; then
               # 2. The Dependabot ignore must carry the trailing wildcard.
-              dep=$(fetch "$r" ".github/dependabot.yml")
+              #    An ABSENT dependabot.yml (404) is deliberately not a finding
+              #    here. An UNREADABLE one is not the same thing and must not
+              #    share its silence.
+              dep=""
+              if dep_out=$(fetch "$r" ".github/dependabot.yml"); then
+                dep="$dep_out"
+              elif [ "$?" -eq 2 ]; then
+                note_unassessed "$r" "$vis" "check 2 (dependabot gh-aw ignore)" "$(gh_why)" "$(gh_detail)"
+              fi
               if [ -n "$dep" ] && ! printf '%s' "$dep" | grep -q 'github/gh-aw-actions\*'; then
                 findings="${findings}dependabot.yml missing \`github/gh-aw-actions*\` ignore; "
                 kinds="${kinds}dependabot-missing-gh-aw-ignore"$'\n'
@@ -1229,7 +1563,12 @@ jobs:
 
               # 3. Lock files whose compiler disagrees with the pinned setup.
               for f in $locks; do
-                body=$(fetch "$r" ".github/workflows/$f")
+                # Listed a moment ago, so neither 404 nor 403 is "nothing to
+                # check". Both are recorded; neither is silently clean.
+                if ! body=$(fetch "$r" ".github/workflows/$f"); then
+                  note_unassessed "$r" "$vis" "check 3 (lock compiler vs pinned setup) on one lock file" "$(gh_why)" "$(gh_detail)"
+                  continue
+                fi
                 [ -n "$body" ] || continue
                 # No `head -1` / `grep -m1` in a pipe here: they close the pipe
                 # early, the upstream writer takes SIGPIPE, and under
@@ -1250,9 +1589,21 @@ jobs:
             fi
 
             if [ "$uses_zima" = yes ]; then
-              al=$(fetch "$r" ".github/actionlint.yaml")
-              [ -n "$al" ] || al=$(fetch "$r" ".github/actionlint.yml")
-              if ! printf '%s' "$al" | grep -qE '^[[:space:]]*-[[:space:]]*zima[[:space:]]*$'; then
+              # Either filename may be absent (404) — that is the whole point
+              # of trying both, and an absent config IS the finding. A read
+              # that FAILED is different: it would publish "uses zima without
+              # actionlint declaring it" about a file nobody could read.
+              al=""; al_unreadable=no
+              for alf in .github/actionlint.yaml .github/actionlint.yml; do
+                if al_out=$(fetch "$r" "$alf"); then
+                  if [ -n "$al_out" ]; then al="$al_out"; break; fi
+                elif [ "$?" -eq 2 ]; then
+                  al_unreadable=yes
+                fi
+              done
+              if [ -z "$al" ] && [ "$al_unreadable" = yes ]; then
+                note_unassessed "$r" "$vis" "check 4 (zima declared to actionlint)" "$(gh_why)" "$(gh_detail)"
+              elif ! printf '%s' "$al" | grep -qE '^[[:space:]]*-[[:space:]]*zima[[:space:]]*$'; then
                 findings="${findings}uses \`zima\` without actionlint declaring it; "
                 kinds="${kinds}zima-undeclared"$'\n'
               fi
@@ -1266,7 +1617,15 @@ jobs:
             #    because a backfill inserted old releases on top of newer ones.
             #    Uses git/refs/tags, not /tags: the latter paginates by name and
             #    silently under-reports (68 of 185 on the largest repo).
-            latest_rel=$(gh api "/repos/$ORG/$r/releases/latest" --jq '.tag_name' 2>/dev/null || true)
+            #    A repo with no releases answers 404 here, which is a real
+            #    answer and correctly produces no finding. A 403 or a 5xx is
+            #    not an answer, and used to produce no finding either.
+            latest_rel=""
+            if rel_out=$(gh_read "/repos/$ORG/$r/releases/latest" --jq '.tag_name'); then
+              latest_rel="$rel_out"
+            elif [ "$?" -eq 2 ]; then
+              note_unassessed "$r" "$vis" "check 5 (latest release vs highest tag)" "$(gh_why)" "$(gh_detail)"
+            fi
             rel_ver=$(printf '%s' "$latest_rel" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$' || true)
             if [ -n "$rel_ver" ]; then
               # Compare WITHIN one component only. The contract allows
@@ -1277,13 +1636,23 @@ jobs:
               # release tag minus its trailing semver, which handles every
               # grammar in the org -- "resq-cli-v", "v", "@scope/pkg@".
               rel_prefix=${latest_rel%"$rel_ver"}
-              top_tag=$(gh api "/repos/$ORG/$r/git/refs/tags" --paginate --jq '.[].ref' 2>/dev/null \
-                | sed 's|^refs/tags/||' \
-                | while IFS= read -r t; do
-                    case "$t" in "$rel_prefix"*) printf '%s\n' "${t#"$rel_prefix"}" ;; esac
-                  done \
-                | grep -xE '[0-9]+\.[0-9]+\.[0-9]+' \
-                | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 || true)
+              # The tag listing failing used to leave `top_tag` empty, which
+              # reads as "no tag is higher than the latest release" — the
+              # check's own clean verdict, manufactured from an error. There
+              # IS a latest release at this point, so the repo has tags; a
+              # failure here is never "no tags".
+              top_tag=""
+              if ! tag_refs=$(gh_read "/repos/$ORG/$r/git/refs/tags" --paginate --jq '.[].ref'); then
+                note_unassessed "$r" "$vis" "check 5 (latest release vs highest tag)" "$(gh_why)" "$(gh_detail)"
+              else
+                top_tag=$(printf '%s\n' "$tag_refs" \
+                  | sed 's|^refs/tags/||' \
+                  | while IFS= read -r t; do
+                      case "$t" in "$rel_prefix"*) printf '%s\n' "${t#"$rel_prefix"}" ;; esac
+                    done \
+                  | grep -xE '[0-9]+\.[0-9]+\.[0-9]+' \
+                  | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 || true)
+              fi
               if [ -n "$top_tag" ] && [ "$top_tag" != "$rel_ver" ]; then
                 newest=$(printf '%s\n%s\n' "$top_tag" "$rel_ver" \
                   | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
@@ -1297,6 +1666,10 @@ jobs:
             # 7. Run health.
             check_run_health "$r" "$vis"
 
+            if [ "$repo_unassessed" = 1 ]; then
+              unassessed_repos=$((unassessed_repos + 1))
+            fi
+
             if [ -n "$findings" ]; then
               if [ "$vis" = public ]; then
                 affected=$((affected + 1))
@@ -1309,6 +1682,9 @@ jobs:
               fi
             fi
           done
+
+          if [ "$unassessed"       -eq 1 ]; then ua_pair="pair"; else ua_pair="pairs"; fi
+          if [ "$unassessed_repos" -eq 1 ]; then ua_repo="repository"; else ua_repo="repositories"; fi
 
           if [ -n "$skipped_public" ] || [ "$skipped_withheld" -gt 0 ]; then
             echo "sweep: skipped via skip-repos — public: ${skipped_public:-<none>}; non-public: $skipped_withheld (names withheld — this log is public)"
@@ -1325,13 +1701,32 @@ jobs:
           tally() {
             # Count a newline-separated list without letting an empty list
             # abort the script under `set -e -o pipefail`.
-            printf '%s\n' "$1" | grep . | sort | uniq -c \
-              | sort -rn | awk '{printf "| %s | %s |\n", $2, $1}' || true
+            #
+            # `awk '{print $2}'` on `uniq -c` output kept only the FIRST WORD
+            # of the key, which was invisible while every key was a single
+            # token and silently truncated the first multi-word one — the
+            # unassessed-check labels all rendered as "checks". Take
+            # everything after the count instead.
+            printf '%s\n' "$1" | grep . | sort | uniq -c | sort -rn \
+              | sed 's/^ *\([0-9][0-9]*\)[[:space:]][[:space:]]*\(.*\)$/| \2 | \1 |/' || true
           }
           {
             echo "## Org CI-configuration sweep"
             echo
             echo "Token: \`$token_used\`. Enumerated **$enum_pub** public + **$enum_priv** non-public = **$((enum_pub + enum_priv))** repositories. Scanned **$total** non-archived."
+            echo
+            # THE HEADLINE THE REPORT WAS MISSING. Every round of review on
+            # this file has found the same shape: a read fails, the check does
+            # not run, and the report is textually identical to one where the
+            # check ran and found nothing. The two sentences below are chosen
+            # so that they cannot be confused for each other at a glance, and
+            # the "not assessed" one is stated before any findings table.
+            if [ "$unassessed" -gt 0 ]; then
+              echo "> [!WARNING]"
+              echo "> **$unassessed check/repository $ua_pair could not be assessed**, across **$unassessed_repos** $ua_repo (**$np_unassessed** of those pairs in non-public repositories). A read failed, so the check did not run — this is **not** the same as the check running and finding nothing, and the tables below do not cover it. See *Checks that could not be run*."
+            else
+              echo "Every check ran on every repository that was enumerated and readable: **0** checks were skipped by a failed read."
+            fi
             echo
             # CONDITIONAL ON THE CHECK HAVING RUN. The previous revision
             # asserted the corroboration unconditionally, so a run whose
@@ -1342,8 +1737,13 @@ jobs:
             case "$corr_priv" in
               corroborated)
                 corr_priv_clause="are corroborated by a second, independent listing (GraphQL agrees: **$gql_priv**) but cannot be proven to be all of them" ;;
+              DISAGREED)
+                corr_priv_clause="are **CONTRADICTED** by the second, independent GraphQL listing (**$gql_priv**), so one of the two is truncated" ;;
               *)
-                corr_priv_clause="are **NOT corroborated by anything on this run** — the second, independent GraphQL listing returned no count after 3 attempts${gql_err:+ (\`$gql_err\`)}, so this count rests on one listing and a truncation of it would go unnoticed" ;;
+                if [ -n "$gql_err" ]; then gql_why_clause="\`gh\` reported \`$gql_err\`"
+                else                       gql_why_clause="the call itself did **not** fail — GraphQL returned a null \`totalCount\` for that side"
+                fi
+                corr_priv_clause="are **NOT corroborated on this run** — the second, independent GraphQL listing returned no non-public count after $gql_tries ($gql_why_clause), so this count rests on a single listing and a truncation of it would go unnoticed. The public side of that same listing is \`$corr_pub\`" ;;
             esac
             if [ "$priv_mode" = VERIFIED ]; then
               echo "Coverage: **complete and VERIFIED** on both sides — the org declares $dec_pub public + $dec_priv non-public and both were fully enumerated. Independent second listing: public \`$corr_pub\`, non-public \`$corr_priv\` — redundancy in this mode, because the declared counts are themselves the check."
@@ -1366,6 +1766,28 @@ jobs:
             echo "| finding kind | occurrences |"
             echo "| --- | --- |"
             if [ -n "$conf_kinds" ]; then tally "$conf_kinds"; else echo "| _none_ | 0 |"; fi
+            echo
+            echo "### Checks that could not be run"
+            echo
+            echo "A read failed, so the check did not run on that repository. **Nothing was learned** — this is neither a finding nor a clean result, and it is counted here precisely so that it can never be folded into either. Every row below is also emitted as a \`::warning\` annotation on this job."
+            echo
+            echo "Non-public repositories appear as counts and as the check label plus the HTTP status, which carry no name; their names and \`gh\`'s message are never written to a tier-1 variable at all."
+            echo
+            if [ "$unassessed" -gt 0 ]; then
+              echo "**$unassessed** check/repository $ua_pair across **$unassessed_repos** $ua_repo; **$np_unassessed** of those pairs are in non-public repositories."
+            else
+              echo "**0** — every check ran on every readable repository. (A repository the token cannot read at all is a different outcome and is counted as \`UNREADABLE\` above: **$unreadable** on this run, **$np_unreadable** of them non-public.)"
+            fi
+            echo
+            echo "| repo | check that did not run | status | \`gh\` reported |"
+            echo "| --- | --- | --- | --- |"
+            if [ -n "$unassessed_rows" ]; then printf '%s' "$unassessed_rows"; else echo "| _none_ | _no public check was skipped by a failed read_ | | |"; fi
+            echo
+            echo "All repositories, by kind (name-free, so it spans both tiers):"
+            echo
+            echo "| check that did not run | occurrences |"
+            echo "| --- | --- |"
+            if [ -n "$unassessed_kinds" ]; then tally "$unassessed_kinds"; else echo "| _none_ | 0 |"; fi
             echo
             echo "### Check 6 — pin drift, public repositories"
             echo
@@ -1404,6 +1826,7 @@ jobs:
             echo "| \`NEVER-GREEN\` | has run, has never once succeeded | yes |"
             echo "| \`NEVER-RUN\` | scheduled, its own record older than its window, never fired | yes |"
             echo "| \`ORPHAN\` | Actions lists it active, the file is absent from the default branch | yes |"
+            echo "| \`UNASSESSED\` | a read failed, so this workflow's history could not be judged. **Not** a clean row — see *Checks that could not be run* | no (counted there instead) |"
             echo "| \`ON-DEMAND\` | no schedule **and its last run was green** — elapsed days say nothing, so it is **not** judged on them | no |"
             echo "| \`NEW\` | never run, and not yet past its window (or dispatch-only) | no |"
             echo
@@ -1415,7 +1838,7 @@ jobs:
             echo "| --- | --- | --- | --- | --- | --- | --- |"
             if [ -n "$health_rows" ]; then printf '%s' "$health_rows"; else echo "| — | _none_ | | | | | |"; fi
             echo
-            echo "Non-public repositories (aggregate). The four buckets are **disjoint** — each finding is counted once, so they sum to the total. An earlier revision reported \"N stale, M never green\" with M a SUBSET of N, which read as N+M findings."
+            echo "Non-public repositories (aggregate). The **five** buckets are **disjoint** — each finding is counted once, so they sum to the total. An earlier revision reported \"N stale, M never green\" with M a SUBSET of N, which read as N+M findings; a later one said \"four buckets\" after \`ORPHAN\` was split out into a fifth. A check that did not RUN is not in any of them: it is not a finding about the repository, and it is counted separately under *Checks that could not be run* (**$np_unassessed** non-public check/repository pairs on this run)."
             echo
             echo "| bucket | findings |"
             echo "| --- | --- |"
@@ -1445,11 +1868,25 @@ jobs:
             echo "| --- | --- |"
             if [ -n "$compiler_seen" ]; then tally "$compiler_seen"; else echo "| _none_ | 0 |"; fi
             echo
-            distinct=$(printf '%s\n' "$compiler_seen" | grep . | sort -u | grep -c . || echo 0)
+            # BLOCKER 2. `grep -c .` on empty input PRINTS `0` and EXITS 1,
+            # so `|| echo 0` appended a SECOND `0` and `distinct` became the
+            # three-byte string `0\n0` — rendering as `**0` / `0**` with the
+            # bold split across a newline and the figure reading "0 0". The
+            # `${distinct:-0}` guard below it was dead: the value is
+            # non-empty, so the default never fired. The sibling per-repo
+            # counter was fixed to `|| true` and this one was not; measured,
+            # `|| true` is 1 byte here and `|| echo 0` is 3.
+            distinct=$(printf '%s\n' "$compiler_seen" | grep . | sort -u | grep -c . || true)
             echo "Distinct versions in use: **${distinct:-0}**. Repositories with more than one version in-tree: **$multi_compiler** (counted per repo inside the scan, so no repository name is accumulated to derive it)."
           } >> "$GITHUB_STEP_SUMMARY"
 
+          # THE TRAILER MUST DIFFER. The reproduction that opened this round
+          # was that the step-log trailer of a repository whose workflow
+          # listing 403'd was BYTE-IDENTICAL to that of a repository which
+          # genuinely has no workflows. `not-assessed` is on its own line so
+          # that a diff of two runs shows it.
           echo "sweep: $affected/$enum_pub public with findings, $unreadable unreadable; $np_affected non-public with findings"
+          echo "sweep: not-assessed=$unassessed check/repo $ua_pair across $unassessed_repos $ua_repo ($np_unassessed non-public) — checks that did NOT run, distinct from checks that ran and found nothing"
           echo "sweep: pins=$pin_total no-version=$pin_nover drifting=$pin_bad; run-health findings=$health_bad (last run concluded failure/timed_out/startup_failure, counted independently of cadence: $health_last_run_failed); non-public coverage=$priv_mode second-listing=$corr_priv"
 
           # GATE. Deliberately narrow for this cycle.
@@ -1470,8 +1907,15 @@ jobs:
           #
           # Unreadable repos are a failure of the sweep itself, not a clean
           # result, so they count toward the gate.
+          # A check that did not run joins `unreadable` here for the same
+          # stated reason: it is a failure of the sweep, not a clean result.
+          # It stays OUT of the default path — the only unconditional hard
+          # failure remains the enumeration-completeness assertion, because a
+          # job that is red on arrival gets muted, which is how this rotted
+          # the first time.
           if [ "${FAIL_ON_FINDINGS:-false}" = "true" ] &&
-             { [ "$affected" -gt 0 ] || [ "$np_affected" -gt 0 ] || [ "$unreadable" -gt 0 ]; }; then
-            echo "::error title=org-conformance-sweep::$affected public + $np_affected non-public with findings, $unreadable unreadable."
+             { [ "$affected" -gt 0 ] || [ "$np_affected" -gt 0 ] || [ "$unreadable" -gt 0 ] \
+               || [ "$unassessed" -gt 0 ]; }; then
+            echo "::error title=org-conformance-sweep::$affected public + $np_affected non-public with findings, $unreadable unreadable, $unassessed check/repository pairs not assessed."
             exit 1
           fi
