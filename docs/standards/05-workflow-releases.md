@@ -156,6 +156,51 @@ the non-public enumeration, so when it does not answer the summary states that
 the non-public count is corroborated by nothing on that run, instead of
 claiming a check that never ran.
 
+### When the counts disagree
+
+Declared and enumerated are compared in **both** directions, because the two
+disagreements mean opposite things.
+
+| shape | meaning | outcome |
+| --- | --- | --- |
+| enumerated **<** declared | repositories the org declares were not seen | **hard error** — INCOMPLETE, exit non-zero, no conformance conclusion drawn |
+| enumerated **>** declared | repositories were seen that the declared counter does not count | **reported** — the run is not failed, and the summary states the excess as an excess |
+
+Over-enumeration keeps the **VERIFIED** mode, deliberately. `VERIFIED` claims
+one thing — no repository the org *declares* escaped the enumeration — and an
+enumeration larger than the declared count is a *stronger* position for that
+claim than an exact match, not a weaker one. Calling it `UNVERIFIED` would
+spell a stronger position with the weaker word, and it would throw away the
+only mode in which a real shortfall is detectable at all: the sweep would go
+blind to genuine under-enumeration for as long as the excess persisted. So the
+mode stands and the *sentence* changes — the summary never says the two
+figures agree when they do not.
+
+The non-public counts can legitimately differ, and not just transiently.
+`total_private_repos` **excludes GitHub security-advisory temporary forks**,
+while `/orgs/{org}/repos` lists them. One such fork exists for as long as its
+advisory is in draft, so a non-public excess equal to the number of open
+drafts is the expected steady state rather than something to chase. It clears
+when the advisory is published or withdrawn. The sweep reconciles the excess
+against that exclusion by repository-name shape and reports whether it is
+**accounted for**; an excess it *cannot* account for is worth investigating,
+because something else is then being left out of the count that the
+completeness arithmetic rests on.
+
+Only counts are ever printed for this. An advisory fork's name embeds its GHSA
+id and this repository is public, so the job summary, the annotations and the
+step log would carry it.
+
+The public side is handled the same way, and has no known exclusion:
+`public_repos` counts archived public repositories and the enumeration is
+taken over `type=all`, so the two are meant to agree. An excess there renders
+as **unexplained**.
+
+Counting has a limit in both directions, stated in the summary rather than
+left implied: equal counts show the absence of a *shortfall*, not that the two
+sets are identical. A run that missed one declared repository and saw one the
+counter excludes lands on `enumerated == declared`.
+
 Run health asks two independent questions, and only one of them involves
 cadence:
 

@@ -48,6 +48,13 @@
 # states which mode ran, and whether the second listing actually corroborated
 # anything or was unavailable.
 #
+# THE TWO COUNTS CAN ALSO DISAGREE THE OTHER WAY, and that is not a failure.
+# `total_private_repos` EXCLUDES GitHub security-advisory temporary forks,
+# which `/orgs/{org}/repos` does enumerate, so while an advisory is in draft
+# the enumeration legitimately exceeds the declared count. Under-enumeration
+# is the error this gate exists for; OVER-enumeration is reported and keeps
+# the VERIFIED mode, because nothing declared was missed. See A1.
+#
 # Until such a token is available this job FAILS LOUDLY: the completeness
 # assertion below refuses to report a sweep that covered part of the org, and
 # a red weekly job is the intended outcome. Silence must never be mistaken for
@@ -633,10 +640,101 @@ jobs:
           enum_priv=$(printf '%s\n' "$all_repos" | grep -c '^private' || true)
 
           incomplete=0
-          if [ "$dec_pub" != null ] && [ "$enum_pub" -lt "$dec_pub" ]; then
-            echo "::error title=org-conformance-sweep::enumerated $enum_pub of $dec_pub public repositories — $((dec_pub - enum_pub)) unreadable. Findings below are NOT a clean bill of health."
-            incomplete=1
-          fi
+
+          # ---- DECLARED vs ENUMERATED, IN BOTH DIRECTIONS -----------------
+          # An earlier revision compared these one way only (`-lt`), so it had
+          # no branch at all for the other outcome. That was not merely a gap.
+          # The gate passed — correctly, nothing declared was missing — and the
+          # VERIFIED summary sentence then went on asserting "the org declares
+          # $dec_pub public + $dec_priv non-public and both were fully
+          # enumerated", an AGREEMENT, on a run where 10 non-public
+          # repositories were enumerated against a declared 9. The numbers did
+          # not agree and the report said they did.
+          #
+          # The two directions mean opposite things, so they are handled apart:
+          #
+          #   UNDER-enumeration (enumerated < declared) — repositories the org
+          #     declares were not seen. This is the failure this gate exists
+          #     for, because the findings would then be a partial sweep
+          #     published as a whole one. HARD ERROR, exactly as before.
+          #   OVER-enumeration (enumerated > declared) — repositories were seen
+          #     that the declared counter does not count. Nothing declared was
+          #     missed, so it must NOT fail the run. It is also not agreement,
+          #     so it must not be absorbed into a sentence claiming agreement.
+          #     REPORTED, and carried into the summary.
+          #
+          # WHY OVER-ENUMERATION KEEPS THE `VERIFIED` MODE — decided, not
+          # defaulted. VERIFIED claims one thing: no repository the org
+          # declares escaped the sweep. An enumeration LARGER than the declared
+          # count is a stronger position for that claim than an exact match,
+          # not a weaker one. Downgrading to UNVERIFIED would spell a stronger
+          # position with the weaker word, and it would discard the only mode
+          # in which a real shortfall is detectable at all — the sweep would go
+          # blind to under-enumeration for as long as the excess persisted,
+          # which for the cause below means "until the advisory is published".
+          # So the MODE stands and the SENTENCE changes.
+          #
+          # WHAT COUNT ARITHMETIC CANNOT DO, in either direction, said once
+          # here so the VERIFIED sentence is not read as more than it is: equal
+          # counts do not prove the two SETS are equal. A run that missed one
+          # declared repository and saw one the counter excludes lands on
+          # enumerated == declared and looks perfect. That weakness predates
+          # this block and is not fixed here; what IS done is to stop
+          # compounding it — an excess is reconciled against a known exclusion
+          # rather than waved through.
+          #
+          # THE KNOWN EXCLUSION, put where a reader meets the number: GitHub
+          # SECURITY-ADVISORY TEMPORARY FORKS are listed by `/orgs/{org}/repos`
+          # but are not counted by `total_private_repos`. One exists for as
+          # long as its advisory is in draft, so a non-public excess equal to
+          # the number of open drafts is the EXPECTED steady state, not a
+          # transient to chase. Measured against this org on 2026-09-30:
+          # declared 9, enumerated 10, and exactly one enumerated non-public
+          # repository carries the advisory fork's name shape — the excess
+          # reconciles in full.
+          #
+          # THE CLASS IS NAMED HERE; THE INSTANCE IS NOT, deliberately. An
+          # advisory fork's NAME EMBEDS ITS GHSA ID, and this file, this log
+          # and this job summary are all world-readable. The reconciliation
+          # below therefore COUNTS name-shape matches and emits only the count.
+          # Name shape is a heuristic, not an authoritative classification, so
+          # it is used only to say whether an excess is accounted for — never
+          # to suppress one.
+          ghsa_shaped=$(printf '%s\n' "$all_repos" \
+            | awk -F'\t' '$1=="private"{print $3}' \
+            | grep -c -- '-ghsa-' || true)
+
+          excess_pub=0; excess_priv=0
+          for side in pub priv; do
+            case "$side" in
+              pub)  d=$dec_pub;  e=$enum_pub;  label=public
+                    # Public repository names are already public. Nothing to
+                    # withhold on this side, and pretending otherwise would
+                    # make the one real disclosure rule look decorative.
+                    under_tail="Findings below are NOT a clean bill of health."
+                    over_tail="No exclusion is known for this side: public_repos counts archived public repositories and this enumeration is taken over type=all, so the two are meant to agree. An excess here is unexplained and worth finding." ;;
+              priv) d=$dec_priv; e=$enum_priv; label=non-public
+                    under_tail="Names withheld — this log is public. Grant a broader token; see docs/standards/05-workflow-releases.md."
+                    over_tail="Known exclusion on this side: security-advisory temporary forks are enumerable through /orgs/{org}/repos but are not counted by total_private_repos, so an excess is expected while an advisory is in draft." ;;
+            esac
+            # Only the non-public side can be `null` here (`public_repos` is a
+            # public field), but that is handled as data rather than assumed
+            # away: with no declared count there is nothing to compare, and the
+            # UNVERIFIED branch below is what covers that case.
+            if [ "$d" = null ]; then
+              continue
+            fi
+            if [ "$e" -lt "$d" ]; then
+              echo "::error title=org-conformance-sweep::enumerated $e of the $d $label repositories the org declares — $((d - e)) unreadable by this token. $under_tail"
+              incomplete=1
+            elif [ "$e" -gt "$d" ]; then
+              case "$side" in
+                pub)  excess_pub=$((e - d))  ;;
+                priv) excess_priv=$((e - d)) ;;
+              esac
+              echo "::notice title=org-conformance-sweep::enumerated $e $label repositories where the org declares $d — $((e - d)) MORE than declared. This is NOT a coverage failure and does not fail the run: nothing the org declares was missed. It does mean the enumeration saw repositories the declared counter excludes, so the summary reports the excess instead of claiming the two figures agree. $over_tail"
+            fi
+          done
           # Independent corroboration of the enumeration, from a different
           # backend with a different pagination path. Permission-filtered like
           # everything else, so it cannot prove completeness — but a
@@ -745,12 +843,13 @@ jobs:
           fi
 
           if [ "$dec_priv" != null ]; then
+            # The declared-vs-enumerated comparison for THIS side already ran,
+            # in the both-directions loop above. It is single-sourced with the
+            # public side there on purpose: handling a direction on one side
+            # only is precisely how the over-enumeration branch came to be
+            # missing, and a second copy here is how the two would drift apart
+            # again. This branch now decides the MODE and nothing else.
             priv_mode=VERIFIED
-            if [ "$enum_priv" -lt "$dec_priv" ]; then
-              # COUNT ONLY. Names are withheld: this log is world-readable.
-              echo "::error title=org-conformance-sweep::$((dec_priv - enum_priv)) of $dec_priv non-public repositories are not readable by this token (names withheld — this log is public). Grant a broader token; see docs/standards/05-workflow-releases.md."
-              incomplete=1
-            fi
           else
             # `.total_private_repos` is unreadable here. What gates it is
             # not established (see the header), so its absence licenses no
@@ -791,6 +890,14 @@ jobs:
               echo "| --- | --- | --- | --- | --- |"
               echo "| public | $dec_pub | $enum_pub | ${gql_pub/null/_no count returned_} | $corr_pub |"
               echo "| non-public | ${dec_priv/null/_not readable_} | $enum_priv | ${gql_priv/null/_no count returned_} | $corr_priv |"
+              # A reader meets `enumerated` > `declared` right here, in the
+              # table, and has no way to tell a benign exclusion from a broken
+              # counter. Say which it is at the point of contact, not only in
+              # the healthy-run summary they never reach on a failing run.
+              if [ "$excess_pub" -gt 0 ] || [ "$excess_priv" -gt 0 ]; then
+                echo
+                echo "\`enumerated\` exceeds \`declared\` above. That is **not** the failure that stopped this run: an excess means repositories were seen that the declared counter excludes, never that a declared one was missed — the error annotation on this job names the check that did fail. \`total_private_repos\` does not count GitHub **security-advisory temporary forks**, which \`/orgs/{org}/repos\` does list, so a non-public excess is expected while an advisory is in draft. Name-shape matches among the enumerated non-public repositories: **$ghsa_shaped** (a count only — the name embeds a GHSA id and this summary is public)."
+              fi
               if [ -n "$gql_err" ]; then
                 echo
                 echo "The independent GraphQL listing returned no count after $gql_tries. \`gh\` reported: \`$gql_err\`"
@@ -1893,10 +2000,41 @@ jobs:
                 fi
                 corr_priv_clause="are **NOT corroborated on this run** — the second, independent GraphQL listing returned no non-public count after $gql_tries ($gql_why_clause), so this count rests on a single listing and a truncation of it would go unnoticed. The public side of that same listing is \`$corr_pub\`" ;;
             esac
+            # THE MODE AND THE ARITHMETIC ARE RENDERED SEPARATELY, because
+            # conflating them is what produced the false sentence this replaces.
+            # "**complete and VERIFIED** on both sides — the org declares
+            # $dec_pub public + $dec_priv non-public and both were fully
+            # enumerated" asserts an AGREEMENT, and it printed that agreement
+            # on a run whose non-public figures were 10 enumerated against 9
+            # declared. The MODE now comes from `priv_mode`; whether the
+            # figures MATCHED comes from the excess counters; and no sentence
+            # below claims the second while only the first holds.
+            excess_clause=''
+            if [ "$excess_pub" -gt 0 ] || [ "$excess_priv" -gt 0 ]; then
+              excess_parts=''
+              if [ "$excess_pub" -gt 0 ]; then
+                excess_parts="public **$enum_pub enumerated vs $dec_pub declared** (+$excess_pub)"
+              fi
+              if [ "$excess_priv" -gt 0 ]; then
+                excess_parts="${excess_parts:+$excess_parts, }non-public **$enum_priv enumerated vs $dec_priv declared** (+$excess_priv)"
+              fi
+              if [ "$ghsa_shaped" -eq 1 ]; then ghsa_noun="repository carries"; else ghsa_noun="repositories carry"; fi
+              # Reconciled against the known exclusion, or reported as
+              # unexplained. COUNTS ONLY: an advisory fork's name embeds its
+              # GHSA id and this summary is world-readable.
+              if [ "$excess_priv" -gt 0 ] && [ "$ghsa_shaped" -eq "$excess_priv" ]; then
+                excess_why="**Accounted for:** \`total_private_repos\` does not count GitHub **security-advisory temporary forks**, and exactly **$ghsa_shaped** enumerated non-public $ghsa_noun that fork's name shape, so the non-public excess reconciles in full. Expected for as long as an advisory is in draft; it clears when the advisory is published or withdrawn."
+              elif [ "$excess_priv" -gt 0 ]; then
+                excess_why="**Not fully accounted for:** \`total_private_repos\` does not count GitHub **security-advisory temporary forks**, but **$ghsa_shaped** enumerated non-public $ghsa_noun that name shape, which does not cover an excess of **$excess_priv**. Something else is being left out of the declared count, and it is worth finding — the excess is exactly what this arithmetic rests on."
+              else
+                excess_why="**Unexplained:** no exclusion is known for the public side. \`public_repos\` counts archived public repositories and the enumeration is taken over \`type=all\`, so the two are meant to agree; an excess here is worth finding."
+              fi
+              excess_clause=" The enumeration is **larger than what the org declares** — $excess_parts — so the two figures do **not** match, and this sentence does not claim they do. Nothing declared was missed, which is all \`VERIFIED\` asserts, so the mode stands: an enumeration exceeding the declared count is a stronger position for that claim than an exact match, not a weaker one. $excess_why"
+            fi
             if [ "$priv_mode" = VERIFIED ]; then
-              echo "Coverage: **complete and VERIFIED** on both sides — the org declares $dec_pub public + $dec_priv non-public and both were fully enumerated. Independent second listing: public \`$corr_pub\`, non-public \`$corr_priv\` — redundancy in this mode, because the declared counts are themselves the check."
+              echo "Coverage: **complete and VERIFIED** on both sides — the org declares $dec_pub public + $dec_priv non-public, and the enumeration covered every declared repository ($enum_pub public + $enum_priv non-public).$excess_clause Independent second listing: public \`$corr_pub\`, non-public \`$corr_priv\` — redundancy in this mode, because the declared counts are themselves the check. What counting shows is the absence of a SHORTFALL, not that the two sets are identical."
             else
-              echo "Coverage: public side **complete and VERIFIED** against the org's declared $dec_pub (independent second listing: \`$corr_pub\`). Non-public side **UNVERIFIED** — this token cannot read \`total_private_repos\`, so the $enum_priv non-public repositories enumerated here $corr_priv_clause. That field sits in the owner-only block of the org object, and what exactly gates it is **not established** (measured: absent under every non-member token tried, present under both org-owner tokens tried, one of them without \`admin:org\`). Adding **Organization administration: Read** to a fine-grained token is the suggested route to VERIFIED coverage and is **untested here**. **Do not read the non-public findings below as a complete bill of health.**"
+              echo "Coverage: public side **complete and VERIFIED** against the org's declared $dec_pub (independent second listing: \`$corr_pub\`). Non-public side **UNVERIFIED** — this token cannot read \`total_private_repos\`, so the $enum_priv non-public repositories enumerated here $corr_priv_clause. That field sits in the owner-only block of the org object, and what exactly gates it is **not established** (measured: absent under every non-member token tried, present under both org-owner tokens tried, one of them without \`admin:org\`). Adding **Organization administration: Read** to a fine-grained token is the suggested route to VERIFIED coverage and is **untested here**. **Do not read the non-public findings below as a complete bill of health.**$excess_clause"
             fi
             echo
             echo "Pin-drift and run-health findings below are **reported, not gated** — see the follow-up in the PR that introduced them. Only an incomplete enumeration fails this job."
