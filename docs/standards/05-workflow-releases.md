@@ -72,16 +72,26 @@ count.)
    version.
 
    Still true, and now measured across the whole org rather than its public
-   half. Re-counted 2026-09-30 by running the sweep's own `pins.awk` over
-   every workflow file in all 21 repositories: **23 live pins — 17 public and
-   6 non-public — every one of them a full 40-character SHA, and not one
+   half. Re-counted 2026-09-30T14:50Z by running the sweep's own `pins.awk`
+   over every workflow file in all 21 repositories: **23 live pins — 17 public
+   and 6 non-public — every one of them a full 40-character SHA, and not one
    carrying a version comment.** (The sweep's own run that day reported 22.
    The one-pin difference is not explained here; it does not move the clause,
    since the "without a version comment" figure is the whole population on
    either count. Two further `@main` matches were excluded as documentation
-   examples in `.github/workflows/README.md` rather than live pins.) While
-   clause 1 is unmet there is no version for a comment to name, so the stated
-   rationale is inoperative.
+   examples in `.github/workflows/README.md` rather than live pins.)
+
+   Read 23 as *pin occurrences across enumerated repositories*, not as a count
+   of distinct consumers. One of the six non-public pins sits in the
+   security-advisory temporary fork, where it is a copy of a pin its parent
+   already contributes, so that pin is counted twice. The same repository
+   reads one *low* in the declared counter — every figure derived by scanning
+   files is inflated by it, and every figure taken from `total_private_repos`
+   is deflated by it. Neither direction moves this clause, because the count
+   carrying a version comment is 0 across the whole population.
+
+   While clause 1 is unmet there is no version for a comment to name, so the
+   stated rationale is inoperative.
    `org-conformance-sweep.yml` therefore reports the count with that caveat
    attached, rather than filing it against each consumer for a gap on the
    producer side.
