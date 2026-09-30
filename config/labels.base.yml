@@ -1,0 +1,132 @@
+# Canonical ResQ label base — the shared floor every repo's labels carry.
+# Adopt by REFERENCE, not copy: list this file's raw URL as the first
+# `config-file` entry in .github/workflows/label-sync.yml, above the repo's own
+# .github/labels.yml. See config/README.md and docs/standards/01-baseline.md.
+#
+# Inclusion rule: a label earns a place here only if automation depends on its
+# exact name, or it is demonstrably adopted across repos by use. Frequency of
+# *declaration* is not evidence — the S-* / good-first-issue family is declared
+# in 12 of 12 repo configs and has never been applied to a single issue.
+#
+# EndBug/label-sync does NOT merge configs by name: a name appearing in both
+# this file and a repo's own labels.yml is emitted twice and applied by two
+# concurrent, conflicting API calls. Per-repo files must stay DISJOINT from
+# this one. Additions go in the repo's labels.yml under its own header.
+
+# --- Change type (C-*) -------------------------------------------------------
+# Applied automatically from the conventional-commit title prefix by
+# .github/workflows/conventional-title-labeler.yml, and consumed as changelog
+# categories by .github/release.yml. The names are hard-coded in both.
+- name: "C-Feature"
+  color: "a2eeef"
+  description: New feature or request
+- name: "C-Bug"
+  color: "d73a4a"
+  description: Something isn't working
+- name: "C-Performance"
+  color: "f9d0c4"
+  description: Performance regression or optimization
+- name: "C-Documentation"
+  color: "0075ca"
+  description: Improvements or additions to documentation
+- name: "C-Refactor"
+  color: "d4c5f9"
+  description: Code refactoring with no behavior change
+- name: "C-Testing"
+  color: "c2e0c6"
+  description: Tests and test tooling
+- name: "C-Chore"
+  color: "ededed"
+  description: Deps, tooling, or config with no public API change
+
+# --- Area (A-*) --------------------------------------------------------------
+# Applied by path rules in .github/labeler.yml. A-DevOps is also a changelog
+# category in .github/release.yml.
+- name: "A-DevOps"
+  color: "000000"
+  description: CI/CD, workflows, actions, and git hooks
+- name: "A-Build"
+  color: "5319e7"
+  description: Build configuration and toolchain
+
+# --- Priority (P*) -----------------------------------------------------------
+# P0/P1 are stale-bot exemptions in .github/workflows/stale.yml.
+- name: "P0: critical"
+  color: "b60205"
+  description: Outage or data loss — drop everything
+- name: "P1: high"
+  color: "d93f0b"
+  description: Major impact — fix this sprint
+- name: "P2: medium"
+  color: "fbca04"
+  description: Moderate impact — fix soon
+- name: "P3: low"
+  color: "0e8a16"
+  description: Minor impact — fix when convenient
+
+# --- Dependency automation ---------------------------------------------------
+# Applied by Dependabot per .github/dependabot.yml `labels:`; `dependencies` is
+# also a changelog category. Dependabot creates these itself if absent, which is
+# how they ended up grey and undescribed in most repos.
+- name: "dependencies"
+  color: "0366d6"
+  description: Automated dependency updates
+- name: "github-actions"
+  color: "1f6feb"
+  description: GitHub Actions dependency updates
+
+# --- Release-notes control ---------------------------------------------------
+# Exclusion filters in .github/release.yml. Renaming either silently stops the
+# exclusion working, and the PR reappears in the changelog.
+- name: "ignore-for-release"
+  color: "cfd3d7"
+  description: Exclude this PR from generated release notes
+- name: "skip-changelog"
+  color: "cfd3d7"
+  description: Exclude this PR from the changelog
+
+# --- Lifecycle ---------------------------------------------------------------
+# `stale` is written by the stale bot; `pinned` and `security` are its
+# exemptions. All three are read by .github/workflows/stale.yml by exact name.
+- name: "stale"
+  color: "795548"
+  description: No activity for 60 days — will close if it stays quiet
+- name: "pinned"
+  color: "006b75"
+  description: Exempt from the stale bot
+- name: "security"
+  color: "b60205"
+  description: Security-relevant; exempt from the stale bot
+- name: "needs-triage"
+  color: "d876e3"
+  description: Awaiting first maintainer review
+
+# --- Agentic workflows -------------------------------------------------------
+# The org's single most-adopted label: present and in use in 13 repos, and
+# declared in none of them until now.
+- name: "agentic-workflows"
+  color: "5319e7"
+  description: Raised or maintained by an agentic workflow
+
+# --- PR size -----------------------------------------------------------------
+# Minted by pascalgn/size-label-action, which calls addLabels and never sets a
+# colour — so GitHub auto-creates them grey and undescribed. Declaring them here
+# is what gives them a meaning; the action will not fight over the colour.
+- name: "size/XS"
+  color: "0e8a16"
+  description: Extra-small change (under 10 lines)
+- name: "size/S"
+  color: "93c47d"
+  description: Small change (10-29 lines)
+- name: "size/M"
+  color: "fbca04"
+  description: Medium change (30-99 lines)
+- name: "size/L"
+  color: "d93f0b"
+  description: Large change (100-499 lines)
+- name: "size/XL"
+  color: "b60205"
+  description: Extra-large change (500-999 lines)
+- name: "size/XXL"
+  color: "5c0102"
+  description: Massive change (1000+ lines) — consider splitting
