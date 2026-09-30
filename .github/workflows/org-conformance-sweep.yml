@@ -2072,7 +2072,6 @@ jobs:
               if [ "$excess_priv" -gt 0 ]; then
                 excess_parts="${excess_parts:+$excess_parts, }non-public **$enum_priv enumerated vs $dec_priv declared** (+$excess_priv)"
               fi
-              if [ "$ghsa_shaped" -eq 1 ]; then ghsa_noun="repository carries"; else ghsa_noun="repositories carry"; fi
               # Reported against the leading explanation, or reported as
               # unexplained. An explanation OFFERED, not a clearance granted:
               # name shape is a heuristic and the exclusion itself is
