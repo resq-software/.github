@@ -717,17 +717,6 @@ jobs:
           # finding that the excess is benign.
           #
           # THE CLASS IS NAMED HERE; THE INSTANCE IS NOT, deliberately. An
-          # advisory fork's NAME EMBEDS ITS GHSA ID, and this file, this log
-          # and this job summary are all world-readable. The reconciliation
-          # below therefore compares name-shape matches against the excess and
-          # publishes only WHETHER they agree in size — never the size itself,
-          # which would disclose how many advisories the org has in draft.
-          # Name shape is a heuristic, not an authoritative classification, so
-          # it is used only to say whether an excess is accounted for — never
-          # to suppress one.
-          ghsa_shaped=$(printf '%s\n' "$all_repos" \
-            | awk -F'\t' '$1=="private"{print $3}' \
-            | grep -c -- '-ghsa-' || true)
 
           excess_pub=0; excess_priv=0
           for side in pub priv; do
@@ -2078,12 +2067,30 @@ jobs:
               # undocumented — see A1 for what the evidence carries. COUNTS
               # ONLY: an advisory fork's name embeds its GHSA id and this
               # summary is world-readable.
-              if [ "$excess_priv" -gt 0 ] && [ "$ghsa_shaped" -eq "$excess_priv" ]; then
-                excess_why="**Matches the known candidate:** \`total_private_repos\` is believed not to count GitHub **security-advisory temporary forks**, and the excess is exactly the size of that candidate. That is agreement in magnitude, not a demonstrated cause — counting cannot show WHICH repository the declared counter left out, and the exclusion is nowhere documented. Expected to persist while an advisory is in draft, and to clear when it is published or withdrawn. The candidate's size is deliberately not printed: how many advisories an organisation has in draft is non-public in its own right."
-              elif [ "$excess_priv" -gt 0 ]; then
-                excess_why="**Does not match the known candidate:** the advisory-fork explanation does not account for an excess of **$excess_priv**. Something else is being left out of the declared count, and it is worth finding — the excess is exactly what this arithmetic rests on. The candidate's size is deliberately not printed here; see the job log."
-              else
-                excess_why="**Unexplained:** no exclusion is known for the public side. \`public_repos\` counts archived public repositories and the enumeration is taken over \`type=all\`, so the two are meant to agree; an excess here is worth finding."
+              # TWO SIDES, TWO INDEPENDENT EXPLANATIONS. These were an
+              # if/elif/else, so a public excess went unexplained whenever a
+              # non-public one was present — the public side simply never
+              # reached its branch.
+              #
+              # AND THE NON-PUBLIC VERDICT IS NOT PUBLISHED. The reconciliation
+              # is left to an operator, who can run it against the same API.
+              # It is deliberately NOT computed here, because its RESULT cannot
+              # be rendered anywhere this job can write. `enum_priv` and `dec_priv` are published by
+              # design (the two-tier split withholds names, not counts), so
+              # `excess_priv` is derivable from them — and any verdict on
+              # whether the candidate accounts for that excess therefore
+              # discloses how many security-advisory temporary forks exist,
+              # i.e. how many advisories this organisation has in draft. That
+              # is sensitive independently of any repository name, and a public
+              # repo has no restricted output to put it in: the job log is
+              # world-readable too. So the candidate is described, and the
+              # comparison's outcome is not.
+              excess_why=''
+              if [ "$excess_priv" -gt 0 ]; then
+                excess_why="**Non-public side.** An excess of this shape is commonly explained by GitHub **security-advisory temporary forks**: they are listed by \`/orgs/{org}/repos\` and are believed not to be counted by \`total_private_repos\`. That exclusion is undocumented and is a hypothesis this run does not test in public — whether it accounts for this excess is deliberately not reported here, because that answer would disclose how many advisories the organisation currently has open."
+              fi
+              if [ "$excess_pub" -gt 0 ]; then
+                excess_why="${excess_why:+$excess_why }**Public side.** No exclusion is known here. \`public_repos\` counts archived public repositories and the enumeration is taken over \`type=all\`, so the two are meant to agree; an excess is worth finding."
               fi
               excess_clause=" The enumeration is **larger than what the org declares** — $excess_parts — so the two figures do **not** match, and this sentence does not claim they do. Nothing declared was missed, which is all \`VERIFIED\` asserts, so the mode stands: an enumeration exceeding the declared count is a stronger position for that claim than an exact match, not a weaker one. $excess_why"
               # UNVERIFIED variant: public side only, and no claim about what
