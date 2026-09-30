@@ -476,6 +476,40 @@ jobs:
               continue
             fi
 
+            # ---- EXEMPTION IS CHECKED BEFORE ANY WORKFLOW READ --------------
+            # A repository in the ruleset `exclude` list is not governed by the
+            # `required` context, so the question "does it carry a `required`
+            # job" has no consequence for it. This check used to run AFTER the
+            # workflow reads, which meant a failed read on an EXEMPT repository
+            # still went through `note_unassessed` — raising `cov_state` to
+            # PARTIAL, adding a row to the public issue's *could not assess*
+            # list, and publishing a coverage warning about a question whose
+            # answer nobody needs. The exclude list currently names a
+            # non-public repository, so a token that may list it but not read
+            # its contents triggered that every week.
+            #
+            # Moved here, immediately after the default-branch read and before
+            # the directory listing and every per-file read. The
+            # public/non-public exemption accounting is unchanged — the same
+            # two branches, in the same order — it simply happens before a read
+            # failure can be attributed to a repository that is out of scope.
+            # The default-branch read stays AHEAD of it: a repository that
+            # cannot be read at all is genuinely unreachable and belongs in
+            # that count whether it is exempt or not, and `$default` is what
+            # tells the two apart.
+            is_exempt=no
+            for e in $excluded; do
+              if [ "$e" = "$repo" ]; then is_exempt=yes; break; fi
+            done
+            if [ "$is_exempt" = yes ]; then
+              if [ "$vis" = public ]; then
+                exempt_list="${exempt_list}- $repo"$'\n'
+              else
+                np_exempt=$((np_exempt + 1))
+              fi
+              continue
+            fi
+
             # THREE OUTCOMES, NOT TWO. rc 1 (404) means the repository has
             # no `.github/workflows` directory at all — genuine information,
             # and a repository with no workflows genuinely has no `required`
@@ -506,17 +540,44 @@ jobs:
               # file carries no `required` job, so neither may contribute to a
               # `no` verdict. Both are recorded and the verdict is withheld
               # below.
+              # `.content // ""` IS LOAD-BEARING, AND `.content` ALONE PUBLISHED
+              # A FALSE ACCUSATION. A contents entry for a SYMLINK or a
+              # SUBMODULE has no `.content` key, and `--jq '.content'` prints
+              # the four-character string `null`; `base64 -d` accepts that as
+              # valid base64 and decodes it to THREE NON-EMPTY BYTES (9e e9 65)
+              # at rc 0. So the `-z "$content"` guard below — written for
+              # exactly this case, and naming it in its own comment — never
+              # fired, and those three bytes were parsed as the workflow. They
+              # carry no `on:` block and no `required:` key, so the file
+              # contributed a silent `no`: `has_required=no` with
+              # `unread_file=no`. Reproduced against head b57182a2 with one
+              # public repository whose single workflow was served as
+              # `{"type":"submodule"}`: `gap_count=1` naming that repository in
+              # the PUBLIC issue as missing its `required` job, beside
+              # `cov_state=complete`, `unassessed=0` and zero annotations — a
+              # false accusation against a compliant repository, published with
+              # a false claim of completeness next to it. The same file served
+              # as a genuinely empty 200 correctly produced
+              # `gap_count=0 unassessed=1`.
               if content_b64=$(gh_read "/repos/$ORG/$repo/contents/.github/workflows/$f?ref=$default" \
-                                 --jq '.content'); then
+                                 --jq '.content // ""'); then
                 content=$(printf '%s' "$content_b64" | base64 -d 2>/dev/null || true)
                 if [ -z "$content" ]; then
-                  # Read fine (HTTP 200) and decoded to nothing: an empty
-                  # file, or an entry with no `.content` at all (a submodule
-                  # or symlink). Not absent, and not assessable either — the
-                  # same third outcome `check_run_health` records in
+                  # Read fine (HTTP 200) and the entry carries no file content:
+                  # an empty file, or a symlink or submodule, which has no
+                  # `.content` at all. Not absent, and not assessable either —
+                  # the same third outcome `check_run_health` records in
                   # org-conformance-sweep.yml, given the same treatment here.
+                  # DELIBERATELY NOT A FOURTH OUTCOME. All three shapes answer
+                  # the only question this loop asks — does this file carry a
+                  # `required` job — with "this audit cannot tell", and all
+                  # three have the same remedy: a human looks at the path. A
+                  # fourth outcome would need its own counter, its own issue
+                  # sentence and its own section in both workflows to split a
+                  # bucket with one remedy. The distinction that does matter to
+                  # a reader is carried in the reason string instead.
                   unread_file=yes
-                  [ -n "$unread_why" ] || unread_why="read succeeded, body decoded empty"
+                  [ -n "$unread_why" ] || unread_why="read succeeded (HTTP 200) but the entry carries no file content — an empty file, a symlink or a submodule"
                   continue
                 fi
               else
@@ -559,19 +620,9 @@ jobs:
               continue
             fi
 
-            is_exempt=no
-            for e in $excluded; do
-              if [ "$e" = "$repo" ]; then is_exempt=yes; break; fi
-            done
-            if [ "$is_exempt" = yes ]; then
-              if [ "$vis" = public ]; then
-                exempt_list="${exempt_list}- $repo"$'\n'
-              else
-                np_exempt=$((np_exempt + 1))
-              fi
-              continue
-            fi
-
+            # No exemption check here: every exempt repository was already
+            # skipped above, before the reads, so anything reaching this point
+            # is governed by the ruleset and a missing `required` job is a gap.
             gap_count=$((gap_count + 1))
             if [ "$vis" = public ]; then
               # The default-branch name is published here. That is fine for a
@@ -737,8 +788,46 @@ jobs:
           else
             not_assessed=""
           fi
+          # ---- WHICH DECLARED-COUNT READ WENT UNVERIFIED ---------------------
+          # Computed HERE, above the `case`, because it is NOT a property of
+          # the arm that renders. `cov_pub_unverified` and
+          # `cov_priv_unverified` record that a declared-count read failed;
+          # `cov_state` records the WORST thing that happened. Those are
+          # independent, and the state is raise-only, so a run can carry
+          # `cov_pub_unverified=1` and still render the PARTIAL arm — a failed
+          # `public_repos` read raises UNVERIFIED, and one per-repo read
+          # failure then raises PARTIAL over it.
+          #
+          # The earlier fix for that wrong diagnosis was written INSIDE the
+          # UNVERIFIED arm, so it was branch-local: reproduced with
+          # `cov_pub_unverified=1` and the state raised to PARTIAL by a single
+          # per-repo read failure, the rendered issue dropped the public-side
+          # attribution ENTIRELY — the reader was never told that the public
+          # side of the coverage arithmetic had not run. Not a false clean, but
+          # a fact the issue had recorded and then withheld. The sentences are
+          # built once, here, and consumed by BOTH arms.
+          unv_pub_why=""
+          unv_priv_why=""
+          if [ "${COV_PRIV_UNVERIFIED:-0}" = 1 ]; then
+            unv_priv_why="\`total_private_repos\` is not readable by this token, so the audit cannot prove it saw every non-public repository. That field sits in the owner-only block of the org object; what exactly gates it is **not established here** — measured against this org, it was absent for every non-member token tried and present for both org-owner tokens tried, including one without \`admin:org\` scope, so it is not the \`admin:org\` scope that exposes it. Adding **Organization administration: Read** to a fine-grained token is the suggested remedy but was **not tested**."
+          fi
+          if [ "${COV_PUB_UNVERIFIED:-0}" = 1 ]; then
+            unv_pub_why="the read of \`public_repos\` on the org object FAILED, so the **public** side of the coverage arithmetic never ran and the audit cannot prove it enumerated every public repository. \`public_repos\` is a public field that any working token can read, so this is **not** a token-scope gap: it is a failed request — a rate limit, a 5xx, or a transport error — and a re-run is the remedy. Do not change token permissions on account of this sentence."
+          fi
+          # The PARTIAL arm's composed detail needs this as one more sentence,
+          # in the same shape as the three counters beside it: a state raised
+          # past UNVERIFIED must not silently drop what UNVERIFIED had to say.
+          unverified_side=""
+          if [ -n "$unv_pub_why" ] && [ -n "$unv_priv_why" ]; then
+            unverified_side="Separately from the counts above, **neither** declared-count read succeeded either: ${unv_pub_why} And ${unv_priv_why}"
+          elif [ -n "$unv_pub_why" ]; then
+            unverified_side="Separately from the counts above, a declared-count read also failed: ${unv_pub_why}"
+          elif [ -n "$unv_priv_why" ]; then
+            unverified_side="Separately from the counts above, a declared-count read also failed: ${unv_priv_why}"
+          fi
+
           cov_detail=""
-          for s in "$never_enum" "$unknown_enum" "$read_failed" "$not_assessed"; do
+          for s in "$never_enum" "$unknown_enum" "$read_failed" "$not_assessed" "$unverified_side"; do
             [ -n "$s" ] || continue
             cov_detail="${cov_detail:+$cov_detail }$s"
           done
@@ -763,20 +852,23 @@ jobs:
               # applies to: `public_repos` is a PUBLIC field that any working
               # token can read, so its absence is a failed request — a rate
               # limit or a 5xx — and a re-run is the remedy, not a scope.
+              # The two sentences themselves are built ABOVE the `case`, so that
+              # a state raised past UNVERIFIED still carries them (see the
+              # branch-local defect described there). This arm only chooses the
+              # heading and joins them.
               unv_head=""
               unv_why=""
-              if [ "${COV_PRIV_UNVERIFIED:-0}" = 1 ]; then
+              if [ -n "$unv_priv_why" ]; then
                 unv_head="Coverage of non-public repositories is UNVERIFIED"
-                unv_why="\`total_private_repos\` is not readable by this token, so the audit cannot prove it saw every non-public repository. That field sits in the owner-only block of the org object; what exactly gates it is **not established here** — measured against this org, it was absent for every non-member token tried and present for both org-owner tokens tried, including one without \`admin:org\` scope, so it is not the \`admin:org\` scope that exposes it. Adding **Organization administration: Read** to a fine-grained token is the suggested remedy but was **not tested**."
+                unv_why="$unv_priv_why"
               fi
-              if [ "${COV_PUB_UNVERIFIED:-0}" = 1 ]; then
-                pub_why="the read of \`public_repos\` on the org object FAILED, so the **public** side of the coverage arithmetic never ran and the audit cannot prove it enumerated every public repository. \`public_repos\` is a public field that any working token can read, so this is **not** a token-scope gap: it is a failed request — a rate limit, a 5xx, or a transport error — and a re-run is the remedy. Do not change token permissions on account of this sentence."
+              if [ -n "$unv_pub_why" ]; then
                 if [ -n "$unv_head" ]; then
                   unv_head="Coverage is UNVERIFIED on BOTH sides"
-                  unv_why="${pub_why} Separately, ${unv_why}"
+                  unv_why="${unv_pub_why} Separately, ${unv_why}"
                 else
                   unv_head="Coverage of public repositories is UNVERIFIED"
-                  unv_why="$pub_why"
+                  unv_why="$unv_pub_why"
                 fi
               fi
               # Neither flag set: the state was raised by something neither
@@ -789,12 +881,36 @@ jobs:
           > **${unv_head}.** ${COV_ENUM} repositories were enumerated (a count that deliberately **includes archived** ones, to match \`public_repos\`) and the ${COV_SCANNED} **non-archived** ones among them — the audit's actual scope — were each read, but ${unv_why} Names are withheld: this issue is public."
               ;;
             *)
+              # THE REMEDY MUST MATCH THE CAUSE. This arm hardcoded "grant a
+              # token that can read the whole org", which is the fix for a
+              # TOKEN GAP — a declared-minus-enumerated shortfall
+              # (`COV_SHORTFALL`), or a wholly unread non-public side
+              # (`COV_UNREADABLE_UNKNOWN`). PARTIAL is also raised by a
+              # per-repo read failure (`cov_readfail`) and by an unassessed
+              # workflow read, and neither is a token gap. Reproduced with a
+              # full-org token and one transient failure — `COV_SHORTFALL=0`,
+              # `COV_UNREADABLE_UNKNOWN=0`, `COV_READFAIL=1`: the issue said in
+              # one paragraph that "the cause is per-repo rather than a token
+              # gap" and "a re-run often clears it", and in the very next one
+              # told the reader to grant a broader token and called the audit
+              # "partial by construction". Self-contradictory, and it sends the
+              # reader to change a token scope that was never the problem.
+              #
+              # The two causes can coexist, so this is a choice of remedy, not
+              # of arm: whenever a token gap WAS measured the token advice is
+              # correct and stays, and the per-repo sentence in `cov_detail`
+              # already says a re-run helps for the rest.
+              if [ "${COV_SHORTFALL:-0}" != 0 ] || [ "${COV_UNREADABLE_UNKNOWN:-0}" = 1 ]; then
+                cov_remedy="Grant a token that can read the whole org — the existing org secret \`SYNC_TOKEN\` granted to this repository, or an org-wide \`ORG_READ_TOKEN\` (fine-grained: Metadata + Contents read) — and re-run. Until then this audit is partial by construction."
+              else
+                cov_remedy="**No token gap was measured on this run**: every repository the org declares was enumerated, so the whole-org read scope is not what went wrong here and changing it would not help. **Re-run the audit** — a rate limit or a 5xx usually clears. If the same repositories fail again on a re-run, the token can list them but not read them, and a broader grant is the remedy then."
+              fi
               coverage="> [!WARNING]
           > **Coverage was INCOMPLETE — do not read this issue as a clean bill of health.**
           >
           > ${cov_detail} Names are withheld: this issue is public.
           >
-          > Grant a token that can read the whole org — the existing org secret \`SYNC_TOKEN\` granted to this repository, or an org-wide \`ORG_READ_TOKEN\` (fine-grained: Metadata + Contents read) — and re-run. Until then this audit is partial by construction."
+          > ${cov_remedy}"
               ;;
           esac
 
@@ -805,8 +921,32 @@ jobs:
             lead="The weekly \`required\`-job audit detected repos without a CI job emitting the \`required\` status-check context."
             ruleset_note="These repos are governed by org ruleset \`default-branch-baseline\` (id 15191038) which requires that context. Until a \`required\` job is added, PRs will hang in \"Expected — Waiting for status to be reported\" and be blocked from merge."
           else
-            lead="The weekly \`required\`-job audit found **no missing \`required\` job among the repositories whose workflows it was able to read** — but it could not read all of them. The coverage note below **is** the finding; there is nothing else in this comment."
-            ruleset_note="Repositories governed by org ruleset \`default-branch-baseline\` (id 15191038) must emit that context or their PRs hang in \"Expected — Waiting for status to be reported\". Nothing below is a gap — the point of this comment is that the audit's coverage was short."
+            # THE ZERO-GAP LEAD MUST MATCH THE STATE THAT REACHED IT. This step
+            # is gated on `gap_count != 0 || cov_state != complete`, so a
+            # zero-gap run arrives here in PARTIAL *or* in UNVERIFIED, and the
+            # two mean different things. In UNVERIFIED nothing was measured
+            # short and every ENUMERATED repository WAS read — what could not
+            # be established is that the enumeration was complete. So "it could
+            # not read all of them" and "the audit's coverage was short" are
+            # both false in that state; they describe PARTIAL.
+            #
+            # "There is nothing else in this comment" was false in BOTH states:
+            # the body always carries the lists, the non-public table and the
+            # Fix/Alternative sections. Dropped rather than qualified — the
+            # sentence it was reinforcing ("the coverage note is the finding")
+            # already makes the point without claiming an empty body.
+            case "$COV_STATE" in
+              UNVERIFIED)
+                lead_clause="could not verify that it enumerated all of them"
+                rs_clause="the audit could not verify that its enumeration was complete"
+                ;;
+              *)
+                lead_clause="could not read all of them"
+                rs_clause="the audit's coverage was short"
+                ;;
+            esac
+            lead="The weekly \`required\`-job audit found **no missing \`required\` job among the repositories whose workflows it was able to read** — but it ${lead_clause}. The coverage note below **is** the finding."
+            ruleset_note="Repositories governed by org ruleset \`default-branch-baseline\` (id 15191038) must emit that context or their PRs hang in \"Expected — Waiting for status to be reported\". Nothing below is a gap — the point of this comment is that ${rs_clause}."
           fi
 
           body=$(cat <<BODYEOF
@@ -847,7 +987,9 @@ jobs:
           | unreachable by the audit runner | ${NP_UNREACHABLE} |
           | not assessed (a workflow read failed) | ${NP_UNASSESSED} |
 
-          If \`unreachable\` is non-zero, the audit is running without a token that can see the whole org and its coverage is partial. If \`missing\` is non-zero, the detail is deliberately not here: read it from the workflow run's own per-repo API calls, or route it to an issue on a non-public repository.
+          A non-zero \`unreachable\` means those repositories **were** enumerated and their individual reads then failed — a per-repo failure such as a rate limit, a 5xx, or a repository this token may list but not read. It is **not** evidence of a missing whole-org token: repositories the token cannot enumerate at all never reach this table, and that shortfall is reported in the coverage note above instead. A re-run often clears it.
+
+          If \`missing\` is non-zero, the detail is deliberately not here, and it is **not** recoverable from this workflow's run log either — that log withholds every non-public repository name by design. Route the detail to an issue on a non-public repository, or re-run the scan with output directed somewhere non-public.
 
           ## Fix
 

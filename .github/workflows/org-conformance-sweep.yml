@@ -474,9 +474,28 @@ jobs:
           # working: the caller file was skipped, check 6 never saw it, and
           # the sweep reported `pins=0 drifting=0` with the STALE-90d row and
           # its annotation both gone.
+          #
+          # `.content // ""` IS LOAD-BEARING, AND `.content` ALONE WAS A
+          # SILENT-CLEAN PATH. A contents entry for a SYMLINK or a SUBMODULE
+          # carries no `.content` key at all, and `--jq '.content'` prints the
+          # four-character string `null` for it. `base64 -d` accepts `null` as
+          # valid base64 and decodes it to THREE NON-EMPTY BYTES — 9e e9 65, at
+          # rc 0 — so every `[ -z "$body" ]` guard below stayed silent and those
+          # three bytes were parsed as the file body. Measured, not theorised:
+          # with one caller file served as `{"type":"submodule"}` the sweep
+          # reported `pins=0 no-version=0 drifting=0` with `not-assessed=0` and
+          # no annotation, where the SAME file served as a genuinely empty 200
+          # correctly recorded `not-assessed=1`. The same input silently dropped
+          # check 3's compiler-drift finding, and in the other direction
+          # MANUFACTURED check 2's `dependabot.yml missing ignore` and check 4's
+          # `uses zima without actionlint declaring it` against files nobody had
+          # read. `// ""` turns the absent key into an empty body — which is
+          # exactly what those guards were already written for: each of them
+          # names the submodule case in its own comment while having been
+          # unable to observe it.
           fetch() {
             local b64
-            b64=$(gh_read "/repos/$ORG/$1/contents/$2" --jq '.content') || return $?
+            b64=$(gh_read "/repos/$ORG/$1/contents/$2" --jq '.content // ""') || return $?
             printf '%s' "$b64" | base64 -d 2>/dev/null || true
           }
 
@@ -621,8 +640,11 @@ jobs:
           # Independent corroboration of the enumeration, from a different
           # backend with a different pagination path. Permission-filtered like
           # everything else, so it cannot prove completeness — but a
-          # disagreement means one of the two listings is truncated, which is
-          # a real and otherwise silent failure.
+          # disagreement means the two listings cannot both be right, which
+          # makes the enumeration untrustworthy — a real and otherwise silent
+          # failure. Which of the two is wrong, and why, is NOT established by
+          # the mismatch: truncation is one cause and a repository created or
+          # deleted between the two requests is another.
           # $ORG is `github.repository_owner`, a GitHub-supplied org slug, so it
           # is interpolated directly rather than passed as a GraphQL variable:
           # a `$var` inside the query would need single quotes here, which the
@@ -641,8 +663,12 @@ jobs:
           # annotations and the rendered summary depend on them:
           #
           #   corroborated  a count came back and it matched the enumeration
-          #   DISAGREED     a count came back and it did not match — one of
-          #                 the two listings is truncated; fails the run
+          #   DISAGREED     a count came back and it did not match — the
+          #                 enumeration is not trustworthy; fails the run.
+          #                 Says DISAGREED, not "truncated": a repository
+          #                 created or deleted between the two separate
+          #                 requests produces the same mismatch, so the
+          #                 disagreement is what is established, not its cause
           #   unavailable   no count came back (rate limit, 5xx, a token
           #                 GraphQL rejects, or a null totalCount)
           #
@@ -691,7 +717,7 @@ jobs:
               st=unavailable
             elif [ "$g" -ne "$e" ]; then
               st=DISAGREED
-              echo "::error title=org-conformance-sweep::two independent listings disagree on the $side repository count ($e via /orgs/$ORG/repos, $g via GraphQL). One of them is truncated, so the enumeration is not trustworthy."
+              echo "::error title=org-conformance-sweep::two independent listings disagree on the $side repository count ($e via /orgs/$ORG/repos, $g via GraphQL). The two do not agree, so the enumeration is not trustworthy. That is the finding; the CAUSE is not established here — one listing may be truncated, or a repository may have been created or deleted between the two calls, which are separate requests."
               incomplete=1
             else
               st=corroborated
@@ -811,8 +837,27 @@ jobs:
           # one and under-reports exactly the oldest pins. Neither is
           # acceptable, so the failure is named and fatal — this is a
           # prerequisite of check 6 across the whole org, not a per-repo read.
-          if ! req_b64=$(gh_read "/repos/$ORG/.github/contents/.github/workflows/required.yml" --jq '.content'); then
+          # `// ""` for the same reason as in `fetch` above: without it a
+          # `required.yml` that is a symlink or a submodule yields the literal
+          # `null`, which decodes to three garbage bytes rather than nothing.
+          # This site FAILED CLOSED even so — the sibling extractor found no
+          # matches in the garbage and the `-z "$SIBLINGS"` guard below refused
+          # the run — but it failed closed with the WRONG REASON, blaming a file
+          # that "changed shape" or an extractor that "stopped matching" when in
+          # fact the entry carried no content to extract from. The empty body
+          # lets that case be named as itself.
+          if ! req_b64=$(gh_read "/repos/$ORG/.github/contents/.github/workflows/required.yml" --jq '.content // ""'); then
             echo "::error title=org-conformance-sweep::cannot read required.yml at main ($(gh_why): $(gh_detail)). Check 6's transitive sibling set is derived from it, and guessing it would under-report the oldest pins. Refusing to run a check 6 that silently narrows its own scope."
+            exit 1
+          fi
+          # Read fine (HTTP 200) and the entry carries no file content: an empty
+          # `required.yml`, or a symlink or submodule where it is expected. Still
+          # fatal — check 6's sibling set is a prerequisite, not a per-repo read —
+          # but named as what it is rather than misattributed to the extractor
+          # below, which is what this site did before `// ""` made the case
+          # observable at all.
+          if [ -z "$req_b64" ]; then
+            echo "::error title=org-conformance-sweep::required.yml at main read fine (HTTP 200) but the contents entry carries no file content — an empty file, a symlink or a submodule. Check 6's transitive sibling set is derived from that file, so there is nothing to derive it from. Refusing to run a check 6 that would silently narrow its own scope."
             exit 1
           fi
           SIBLINGS=$(printf '%s' "$req_b64" | base64 -d \
@@ -1207,13 +1252,19 @@ jobs:
               # That is a false statement about a file nobody could read, and
               # it is the secondary half of the same review thread as
               # BLOCKER 1. The two are told apart now.
-              if b64=$(gh_read "/repos/$ORG/$r/contents/$path" --jq '.content'); then
+              # `// ""` as in `fetch`: without it a lock path that is a symlink
+              # or a submodule yields the literal `null`, decodes to three
+              # non-empty garbage bytes at rc 0, and the `-z "$body"` guard just
+              # below — written for exactly this case — never fired. Measured:
+              # the lock file served as `{"type":"submodule"}` silently dropped
+              # check 3's compiler-drift finding with `not-assessed=0`.
+              if b64=$(gh_read "/repos/$ORG/$r/contents/$path" --jq '.content // ""'); then
                 body=$(printf '%s' "$b64" | base64 -d 2>/dev/null || true)
                 if [ -z "$body" ]; then
                   # Read fine, decoded to nothing: an empty file, or content
                   # this job cannot decode (a submodule or symlink entry has
                   # no `.content`). Not absent, and not assessable either.
-                  note_unassessed "$r" "$vis" "check 7 (run health) on one lock workflow" "read succeeded, body decoded empty"
+                  note_unassessed "$r" "$vis" "check 7 (run health) on one lock workflow" "read succeeded (HTTP 200) but the entry carries no file content — an empty file, a symlink or a submodule"
                   continue
                 fi
               elif [ "$?" -eq 1 ]; then
@@ -1529,7 +1580,7 @@ jobs:
                 # repo's `STALE-90d` pin row disappeared, `pins` went 22 -> 21
                 # and `drifting` 19 -> 18, and the trailer still said
                 # `not-assessed=0`.
-                note_unassessed "$r" "$vis" "checks 1, 4 and 6 on one caller file" "read succeeded, body decoded empty"
+                note_unassessed "$r" "$vis" "checks 1, 4 and 6 on one caller file" "read succeeded (HTTP 200) but the entry carries no file content — an empty file, a symlink or a submodule"
                 continue
               fi
               [ "$f" = security.yml ] && sec="$wfbody"
@@ -1596,7 +1647,7 @@ jobs:
                   # setup, served as a 200 that decodes to nothing: check 3's
                   # drift finding vanished and the public table rendered
                   # "all 11 public repos clean".
-                  note_unassessed "$r" "$vis" "check 3 (lock compiler vs pinned setup) on one lock file" "read succeeded, body decoded empty"
+                  note_unassessed "$r" "$vis" "check 3 (lock compiler vs pinned setup) on one lock file" "read succeeded (HTTP 200) but the entry carries no file content — an empty file, a symlink or a submodule"
                   continue
                 fi
                 # No `head -1` / `grep -m1` in a pipe here: they close the pipe
@@ -1651,7 +1702,7 @@ jobs:
                 if al_out=$(fetch "$r" "$alf"); then
                   if [ -n "$al_out" ]; then al="$al_out"; break; fi
                   al_unusable=yes
-                  [ -n "$al_why" ] || al_why="read succeeded, body decoded empty"
+                  [ -n "$al_why" ] || al_why="read succeeded (HTTP 200) but the entry carries no file content — an empty file, a symlink or a submodule"
                 elif [ "$?" -eq 2 ]; then
                   al_unusable=yes
                   if [ -z "$al_why" ]; then
@@ -1802,7 +1853,7 @@ jobs:
               corroborated)
                 corr_priv_clause="are corroborated by a second, independent listing (GraphQL agrees: **$gql_priv**) but cannot be proven to be all of them" ;;
               DISAGREED)
-                corr_priv_clause="are **CONTRADICTED** by the second, independent GraphQL listing (**$gql_priv**), so one of the two is truncated" ;;
+                corr_priv_clause="are **CONTRADICTED** by the second, independent GraphQL listing (**$gql_priv**), so the two cannot both be right and this enumeration is not trustworthy" ;;
               *)
                 if [ -n "$gql_err" ]; then gql_why_clause="\`gh\` reported \`$gql_err\`"
                 else                       gql_why_clause="the call itself did **not** fail — GraphQL returned a null \`totalCount\` for that side"

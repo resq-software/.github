@@ -142,8 +142,13 @@ printed in the summary rather than papered over.
 That corroboration has three outcomes, not two, because the GraphQL call can
 also simply fail — a rate limit, a transient 5xx, a token GraphQL rejects. The
 sweep therefore reports it as `corroborated`, `DISAGREED` or `unavailable`
-rather than as a boolean. A disagreement means one of the two listings is
-truncated and fails the run. `unavailable` does not fail the run — the gate
+rather than as a boolean. A disagreement establishes that the two listings do
+not agree, which makes the enumeration untrustworthy, and it fails the run. It
+does not establish *why* they disagree: truncation of one of them is one cause,
+but a repository created or deleted between the two calls produces the same
+mismatch, and the sweep takes the REST and GraphQL counts in separate requests.
+So the run fails on the disagreement itself, and truncation is claimed only
+where the sweep actually detects it. `unavailable` does not fail the run — the gate
 stays the enumeration-completeness assertion, and a job that goes red on a
 transient error is a job that gets muted — but it does change what the report
 says: in UNVERIFIED mode the GraphQL listing is the *only* independent check on
