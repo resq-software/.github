@@ -92,6 +92,70 @@ jobs:
             export GH_TOKEN="$FALLBACK_TOKEN"
           fi
 
+          # ---- ONE MECHANISM FOR A FAILED READ -------------------------------
+          # Same contract as the `gh_read` in org-conformance-sweep.yml, and
+          # deliberately DUPLICATED rather than extracted into a shared file.
+          # The tradeoff, made on purpose: a shared helper file committed
+          # to this repository is unreachable from either workflow today,
+          # because NEITHER checks the repository out — both talk to the
+          # API only. Sharing it would mean adding `actions/checkout` to
+          # both, including to the sweep, which currently works, and
+          # coupling two independently scheduled jobs to a third file
+          # whose regression takes out both at once. The price of the copy
+          # is that a change has to be made twice. That price is paid down
+          # by copying the RUNTIME SELF-TEST with it: if gh's error format
+          # ever changes, BOTH workflows fail loudly on their next run,
+          # instead of one of them quietly drifting into reading every 403
+          # as "absent" — which is to say, as clean.
+          #
+          #   rc 0  the call succeeded; the body is on stdout
+          #   rc 1  HTTP 404 — the resource is genuinely ABSENT. The only
+          #         failure a caller is allowed to treat as information.
+          #   rc 2  anything else (403, 5xx, rate limit, transport, an
+          #         unparseable response). NOTHING is known.
+          #
+          # Used as `if v=$(gh_read ...)`, so a call site that forgets to
+          # branch aborts the step under `set -e` rather than degrading into a
+          # silent empty string. The status crosses the command-substitution
+          # subshell through a file: a subshell's variable assignments do not
+          # survive it.
+          GH_STF="$RUNNER_TEMP/gh.st"
+          : > "$GH_STF"
+          gh_read() {
+            local out err st
+            if out=$(gh api "$@" 2>"$RUNNER_TEMP/gh.err"); then
+              printf '%s' "$out"
+              printf '0\t\n' > "$GH_STF"
+              return 0
+            fi
+            err=$(tr -d '\r' < "$RUNNER_TEMP/gh.err" | tr '\n' ' ' \
+                  | sed 's/  */ /g; s/^ //; s/ $//' | cut -c1-160)
+            # `gh` reports HTTP failures as `gh: <message> (HTTP NNN)`. A jq or
+            # transport failure carries no such suffix and is treated as
+            # "unknown status", which classifies as rc 2 — the safe side.
+            st=$(printf '%s' "$err" | sed -n 's/.*(HTTP \([0-9][0-9]*\)).*/\1/p')
+            printf '%s\t%s\n' "${st:-none}" "$err" > "$GH_STF"
+            if [ "$st" = 404 ]; then return 1; fi
+            return 2
+          }
+          # Public-SAFE reason: the HTTP status alone. Never gh's message,
+          # which is echoed for public repositories only.
+          gh_why()    { printf 'HTTP %s' "$(cut -f1 "$GH_STF")"; }
+          gh_detail() { cut -f2 "$GH_STF"; }
+          # `(HTTP NNN)` is gh's output format, not a contract. If it changes,
+          # every 403 below reclassifies as a 404 — as "absent", as clean. One
+          # throwaway call proves the matcher still matches. A repository name
+          # that cannot exist: `..` is outside the legal name character class.
+          gh_selftest_rc=0
+          gh_read "/repos/$ORG/this..repo..cannot..exist" --jq '.name' >/dev/null \
+            || gh_selftest_rc=$?
+          gh_selftest_st=$(cut -f1 "$GH_STF")
+          if [ "$gh_selftest_rc" -ne 1 ] || [ "$gh_selftest_st" != 404 ]; then
+            echo "::error title=audit-required-job::gh_read self-test: expected rc=1 status=404 for an impossible repository, got rc=$gh_selftest_rc status=$gh_selftest_st. gh's error format has changed, so this job can no longer tell 'absent' from 'unreadable' — and would publish every unreadable repository as a governance GAP while still claiming complete coverage. Refusing to run."
+            exit 1
+          fi
+          echo "audit: gh_read classifier OK (impossible repo -> rc=1/HTTP 404; every other failure classifies as unreadable)"
+
           # Enumerate FIRST, carrying the visibility flag. Everything below
           # needs the public/non-public split before it prints anything, the
           # ruleset exclude list included.
@@ -312,6 +376,62 @@ jobs:
           np_exempt=0
           np_ok=0
 
+          # A READ FAILED, SO THE QUESTION WAS NOT ANSWERED. This outcome did
+          # not exist before. The two per-repo reads below were
+          #   gh api ... 2>/dev/null | grep -E '\.ya?ml$' || true
+          #   gh api ... --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true
+          # which put the failure on the LEFT of a pipe, where `pipefail`
+          # reports the pipeline's success, so an unreadable workflow
+          # directory produced the same empty string as a repository that
+          # genuinely has none.
+          #
+          # An earlier round declined to fix this on the reasoning that the
+          # failure mode "errs toward OVER-reporting" — an unreadable listing
+          # makes `has_required=no`, which registers a GAP. That reasoning is
+          # wrong, and reproduced as wrong against head b93616ec: with HTTP
+          # 403 injected on ONE public repository's workflow listing and
+          # everything else working, the run printed `gaps=1` naming a
+          # repository that in fact HAS a `required` job, AND
+          # `coverage (FINAL): state=complete ... enumerated-but-unreadable=0`
+          # — and its output was BYTE-IDENTICAL to the same injection made as
+          # a 404, which is the genuinely-empty case. So the cost is a false
+          # GAP published by name in a public issue, paired with a false claim
+          # that the audit was complete. Two false statements, not an
+          # over-report.
+          #
+          # It is therefore neither a gap nor an ok: counted here, rendered in
+          # the issue, annotated on the job, and it RAISES the coverage state
+          # so the run cannot claim `complete`.
+          #
+          # Counted separately from `cov_readfail` for the reason that counter
+          # is itself separate from `cov_shortfall`: they are different
+          # failures that appear in different places. `cov_readfail` repos
+          # appear under *unreachable*; these appear under *not assessed*, and
+          # the sentence rendered for each says where to find it.
+          unassessed=0
+          np_unassessed=0
+          unassessed_list=""
+          # $1 repo  $2 visibility  $3 what did not run  $4 public-SAFE why
+          # $5 public-only detail (optional)
+          # `$4` is passed in rather than read from `gh_why` inside, because
+          # not every unassessed outcome has an HTTP status — a body that
+          # decodes to nothing came back 200 — and inheriting the last status
+          # would attribute it to an unrelated request.
+          note_unassessed() {
+            local r="$1" vis="$2" chk="$3" why="$4" detail="${5:-}"
+            unassessed=$((unassessed + 1))
+            cov_raise PARTIAL
+            if [ "$vis" = public ]; then
+              unassessed_list="${unassessed_list}- $r — $chk ($why${detail:+; $detail})"$'\n'
+              echo "::warning title=audit-required-job::$r — NOT ASSESSED: $chk — $why${detail:+: $detail}"
+            else
+              # Tier 2. The label and the HTTP status carry no name; the
+              # repository name and gh's message are never written here.
+              np_unassessed=$((np_unassessed + 1))
+              echo "::warning title=audit-required-job::a non-public repository — NOT ASSESSED: $chk — $why (repository name and gh message withheld — this log is public)"
+            fi
+          }
+
           # Fed by process substitution, NOT a pipe: a pipe would run this loop
           # in a subshell and silently discard every counter increment below.
           while IFS=$'\t' read -r repo vis; do
@@ -334,13 +454,59 @@ jobs:
               continue
             fi
 
-            files=$(gh api "/repos/$ORG/$repo/contents/.github/workflows?ref=$default" \
-              --jq '.[] | .name' 2>/dev/null | grep -E '\.ya?ml$' || true)
+            # THREE OUTCOMES, NOT TWO. rc 1 (404) means the repository has
+            # no `.github/workflows` directory at all — genuine information,
+            # and a repository with no workflows genuinely has no `required`
+            # job, so the gap classification below is correct for it. rc 2
+            # means the listing could not be read and NOTHING follows from it,
+            # least of all a gap.
+            # The `.ya?ml$` filter is applied by jq rather than by a
+            # downstream `grep ... || true`, so that the only thing left of a
+            # pipe here is nothing at all: that `|| true` is precisely the
+            # shape that made a failed read indistinguishable from an empty
+            # directory in the first place.
+            files=""
+            if ls_out=$(gh_read "/repos/$ORG/$repo/contents/.github/workflows?ref=$default" \
+                          --jq '[.[] | .name | select(test("\\.ya?ml$"))] | join(" ")'); then
+              files="$ls_out"
+            elif [ "$?" -eq 2 ]; then
+              note_unassessed "$repo" "$vis" "workflow directory listing — the \`required\` job could not be looked for" "$(gh_why)" "$(gh_detail)"
+              continue
+            fi
 
             has_required=no
+            unread_file=no
+            unread_why=""
+            unread_detail=""
             for f in $files; do
-              content=$(gh api "/repos/$ORG/$repo/contents/.github/workflows/$f?ref=$default" \
-                --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true)
+              # This file was just LISTED. A 404 now is a race with a push and
+              # a 403/5xx is an access failure; neither is evidence that this
+              # file carries no `required` job, so neither may contribute to a
+              # `no` verdict. Both are recorded and the verdict is withheld
+              # below.
+              if content_b64=$(gh_read "/repos/$ORG/$repo/contents/.github/workflows/$f?ref=$default" \
+                                 --jq '.content'); then
+                content=$(printf '%s' "$content_b64" | base64 -d 2>/dev/null || true)
+                if [ -z "$content" ]; then
+                  # Read fine (HTTP 200) and decoded to nothing: an empty
+                  # file, or an entry with no `.content` at all (a submodule
+                  # or symlink). Not absent, and not assessable either — the
+                  # same third outcome `check_run_health` records in
+                  # org-conformance-sweep.yml, given the same treatment here.
+                  unread_file=yes
+                  [ -n "$unread_why" ] || unread_why="read succeeded, body decoded empty"
+                  continue
+                fi
+              else
+                unread_file=yes
+                # First failure wins: a later one would overwrite a status the
+                # reader is being given as the reason.
+                if [ -z "$unread_why" ]; then
+                  unread_why="$(gh_why)"
+                  unread_detail="$(gh_detail)"
+                fi
+                continue
+              fi
 
               # Skip workflows that only trigger on workflow_call (reusables).
               # A reusable workflow never fires on pull_request even if it has
@@ -357,9 +523,17 @@ jobs:
               fi
             done
 
+            # A POSITIVE find is conclusive even if a sibling file could not
+            # be read: the `required` job was actually seen. A NEGATIVE
+            # verdict is not, because the file that could not be read may be
+            # the one carrying it. Only the negative verdict is withheld.
             if [ "$has_required" = yes ]; then
               ok_count=$((ok_count + 1))
               [ "$vis" = public ] || np_ok=$((np_ok + 1))
+              continue
+            fi
+            if [ "$unread_file" = yes ]; then
+              note_unassessed "$repo" "$vis" "\`required\` job — no workflow that was read carries one, but at least one workflow file could not be read" "$unread_why" "$unread_detail"
               continue
             fi
 
@@ -393,6 +567,7 @@ jobs:
           # after every writer has run and is the authoritative one.
           echo "coverage (FINAL): state=$cov_state never-enumerated=$cov_shortfall enumerated-but-unreadable=$cov_readfail unknown-shortfall=$cov_unreadable_unknown (names withheld — this log is public)"
           echo "summary: ok=$ok_count  gaps=$gap_count  public-gaps=$((gap_count - np_gap))  non-public-gaps=$np_gap  unreachable-non-public=$np_unreachable"
+          echo "not-assessed: $unassessed repositories whose \`required\`-job question a failed read left unanswered ($np_unassessed non-public) — neither a gap nor a pass (names withheld — this log is public)"
 
           {
             echo "gap_count=$gap_count"
@@ -403,6 +578,8 @@ jobs:
             echo "cov_state=$cov_state"
             echo "cov_shortfall=$cov_shortfall"
             echo "cov_readfail=$cov_readfail"
+            echo "unassessed=$unassessed"
+            echo "np_unassessed=$np_unassessed"
             echo "cov_unreadable_unknown=$cov_unreadable_unknown"
             echo "cov_enum=$((enum_pub + enum_priv))"
             echo "cov_scanned=$scanned"
@@ -418,6 +595,10 @@ jobs:
             printf '%s' "${exempt_list:-*(none)*
           }"
             echo "EXEOF"
+            echo "unassessed_list<<UNASEOF"
+            printf '%s' "${unassessed_list:-*(none)*
+          }"
+            echo "UNASEOF"
           } >> "$GITHUB_OUTPUT"
 
       # N8: this used to be gated on `gap_count != '0'` alone, so the coverage
@@ -442,6 +623,9 @@ jobs:
           COV_STATE: ${{ steps.scan.outputs.cov_state }}
           COV_SHORTFALL: ${{ steps.scan.outputs.cov_shortfall }}
           COV_READFAIL: ${{ steps.scan.outputs.cov_readfail }}
+          UNASSESSED: ${{ steps.scan.outputs.unassessed }}
+          NP_UNASSESSED: ${{ steps.scan.outputs.np_unassessed }}
+          UNASSESSED_LIST: ${{ steps.scan.outputs.unassessed_list }}
           COV_ENUM: ${{ steps.scan.outputs.cov_enum }}
           COV_SCANNED: ${{ steps.scan.outputs.cov_scanned }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -514,8 +698,21 @@ jobs:
           else
             read_failed=""
           fi
+          # A THIRD KIND, said separately for the same reason the first two
+          # are: it appears in a different place, so a reader told only the
+          # total cannot find any of them. These repositories WERE enumerated
+          # and WERE read at the repository level; it is the workflow read that
+          # failed, so they are in neither the gap list nor the unreachable
+          # list, and calling them either would be a false statement.
+          if [ "${UNASSESSED:-0}" != 0 ]; then
+            if [ "${UNASSESSED}" = 1 ]; then ua_n="repository **was**"; ua_d="It is"
+            else                             ua_n="repositories **were**"; ua_d="They are"; fi
+            not_assessed="Separately again, **${UNASSESSED}** $ua_n enumerated and read at the repository level, but a workflow read then failed, so the \`required\`-job question was **not answered** there. $ua_d **not** listed as a gap and **not** counted as compliant — publishing either would be a claim this run cannot support. See *repositories the audit could not assess* below: public ones by name, non-public ones as a count."
+          else
+            not_assessed=""
+          fi
           cov_detail=""
-          for s in "$never_enum" "$unknown_enum" "$read_failed"; do
+          for s in "$never_enum" "$unknown_enum" "$read_failed" "$not_assessed"; do
             [ -n "$s" ] || continue
             cov_detail="${cov_detail:+$cov_detail }$s"
           done
@@ -548,7 +745,7 @@ jobs:
             lead="The weekly \`required\`-job audit detected repos without a CI job emitting the \`required\` status-check context."
             ruleset_note="These repos are governed by org ruleset \`default-branch-baseline\` (id 15191038) which requires that context. Until a \`required\` job is added, PRs will hang in \"Expected — Waiting for status to be reported\" and be blocked from merge."
           else
-            lead="The weekly \`required\`-job audit found **no missing \`required\` job among the repositories it was able to read** — but it could not read all of them. The coverage note below **is** the finding; there is nothing else in this comment."
+            lead="The weekly \`required\`-job audit found **no missing \`required\` job among the repositories whose workflows it was able to read** — but it could not read all of them. The coverage note below **is** the finding; there is nothing else in this comment."
             ruleset_note="Repositories governed by org ruleset \`default-branch-baseline\` (id 15191038) must emit that context or their PRs hang in \"Expected — Waiting for status to be reported\". Nothing below is a gap — the point of this comment is that the audit's coverage was short."
           fi
 
@@ -573,6 +770,12 @@ jobs:
 
           ${UNREACHABLE_LIST}
 
+          ## Public repos the audit could not assess
+
+          The repository was read, but a workflow read then failed, so the \`required\`-job question was not answered for it. **Neither a gap nor a pass** — listed here precisely so that the outcome cannot be folded into either. A repository whose workflow directory returned HTTP 404 is not here: that is a repository with no workflows, which genuinely has no \`required\` job, and it appears above as a gap.
+
+          ${UNASSESSED_LIST}
+
           ## Non-public repositories
 
           This issue is public, so non-public repositories are reported as counts only — no names, no branch names.
@@ -582,6 +785,7 @@ jobs:
           | missing the \`required\` job | ${NP_GAP} |
           | exempt via ruleset \`exclude\` | ${NP_EXEMPT} |
           | unreachable by the audit runner | ${NP_UNREACHABLE} |
+          | not assessed (a workflow read failed) | ${NP_UNASSESSED} |
 
           If \`unreachable\` is non-zero, the audit is running without a token that can see the whole org and its coverage is partial. If \`missing\` is non-zero, the detail is deliberately not here: read it from the workflow run's own per-repo API calls, or route it to an issue on a non-public repository.
 

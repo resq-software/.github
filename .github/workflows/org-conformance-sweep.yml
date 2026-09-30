@@ -1513,7 +1513,25 @@ jobs:
                 note_unassessed "$r" "$vis" "checks 1, 4 and 6 on one caller file" "$(gh_why)" "$(gh_detail)"
                 continue
               fi
-              [ -n "$wfbody" ] || continue
+              if [ -z "$wfbody" ]; then
+                # THIRD OUTCOME. `fetch` ends in `base64 -d 2>/dev/null ||
+                # true`, so a read that SUCCEEDED (HTTP 200) but decoded to
+                # nothing returns rc 0 with an empty body — an empty file, or
+                # an entry that has no `.content` at all (a submodule or a
+                # symlink). That is neither "absent" nor "read fine", and the
+                # old `[ -n "$wfbody" ] || continue` folded it into the
+                # silence of the latter. `check_run_health` 300 lines above
+                # already records exactly this case with `note_unassessed`;
+                # checks 1, 4 and 6 did not, so the same undecodable file
+                # meant two different things in one run.
+                # Reproduced against head b93616ec by serving one public
+                # caller file as a 200 whose content decodes to nothing: that
+                # repo's `STALE-90d` pin row disappeared, `pins` went 22 -> 21
+                # and `drifting` 19 -> 18, and the trailer still said
+                # `not-assessed=0`.
+                note_unassessed "$r" "$vis" "checks 1, 4 and 6 on one caller file" "read succeeded, body decoded empty"
+                continue
+              fi
               [ "$f" = security.yml ] && sec="$wfbody"
               # 4. `zima` used as a LITERAL runs-on label without actionlint
               #    declaring it. Match only the LITERAL array form: the
@@ -1569,7 +1587,18 @@ jobs:
                   note_unassessed "$r" "$vis" "check 3 (lock compiler vs pinned setup) on one lock file" "$(gh_why)" "$(gh_detail)"
                   continue
                 fi
-                [ -n "$body" ] || continue
+                if [ -z "$body" ]; then
+                  # The same third outcome as the caller-file loop above, and
+                  # deliberately the same wording `check_run_health` uses, so
+                  # every check in this file agrees on what an undecodable
+                  # file means. Reproduced against head b93616ec with a lock
+                  # file whose compiler genuinely disagreed with its pinned
+                  # setup, served as a 200 that decodes to nothing: check 3's
+                  # drift finding vanished and the public table rendered
+                  # "all 11 public repos clean".
+                  note_unassessed "$r" "$vis" "check 3 (lock compiler vs pinned setup) on one lock file" "read succeeded, body decoded empty"
+                  continue
+                fi
                 # No `head -1` / `grep -m1` in a pipe here: they close the pipe
                 # early, the upstream writer takes SIGPIPE, and under
                 # `set -o pipefail` that aborts the whole sweep. Slice the first
