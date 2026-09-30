@@ -31,17 +31,22 @@ Checked the same day across all 21 repositories and every PR state: **not one
 Dependabot PR has ever been opened against one of those pins** — against a
 positive control confirming the same query returns third-party bumps.
 
-(This section has carried three wrong figures. It said "eight of eleven", then
-"eight" — both public-only views of an org that has twenty-one non-archived
-repositories, the same blind spot that made the drift check below report a
-clean bill of health it had not earned. It then said "15 of 20", whose
-denominator came from the org's *declared* counts; those undercount the
-non-public side by one, for a structural reason set out under "Checking for
-drift" below. Enumerating every repository and reading each one's Dependabot
-config gives 16 of 21. The two differ by exactly the repository the declared
-counter omits — a security-advisory temporary fork, which inherits its
-parent's config — so "15 of 20" landed close for a reason unrelated to how it
-was derived. The figure above is the first one counted rather than inferred.)
+(This section has twice carried a wrong figure on `main`. It said "eight of
+eleven", then "eight" — both public-only views of an org that has twenty-one
+non-archived repositories, the same blind spot that made the drift check below
+report a clean bill of health it had not earned. The figure above is the first
+one counted rather than inferred: every repository enumerated, every
+Dependabot config read.
+
+A third figure, "15 of 20", was written while preparing this change and never
+reached `main`; it is recorded here only because its shape is the trap. Its
+denominator came from the org's *declared* counts, which read one lower than a
+full enumeration on the non-public side — see "When the counts disagree"
+below. Counting instead of inferring gives 16 of 21. The two differ by exactly
+one repository, and it is the same repository the declared counter leaves out,
+so the inferred figure landed close for a reason that had nothing to do with
+how it was derived. A denominator taken from a declared counter is not a
+count.)
 
 ## The contract
 
@@ -161,33 +166,48 @@ what it claims. It establishes that **the enumeration is not short of what the
 org declares** — `public_repos` on the public side, `total_private_repos` on
 the non-public side. That is a floor, not an identity.
 
-The difference is live rather than theoretical, because
-**`total_private_repos` is not a count of every non-public repository.**
-Measured 2026-09-30: this org declared `public_repos=11` and
-`total_private_repos=9`, while a full `type=all` enumeration returned 21
-repositories — 11 public and 10 non-public. The extra one is a GitHub
-security-advisory temporary fork. Such forks are enumerable, and the sweep
-does scan them, but they are excluded from `total_private_repos`. The two
-figures therefore disagree *by construction* for as long as an advisory draft
-exists. That is not a transient, not a partial grant, and not something a
-broader token would fix.
+The difference is live rather than theoretical, because the two numbers are
+measured to disagree here. At 2026-09-30T14:32Z this org declared
+`public_repos=11` and `total_private_repos=9`, while a full `type=all`
+enumeration returned 21 repositories — 11 public and 10 non-public. Exactly
+one of the enumerated non-public repositories carries the name shape of a
+GitHub security-advisory temporary fork, and such forks are enumerable and are
+scanned by the sweep.
+
+The leading explanation is that `total_private_repos` does not count them. It
+is *not* asserted here as an established mechanism: it rests on an excess of
+one against exactly one candidate, in one organisation, at one moment, and
+counting cannot show which repository a counter left out. GitHub documents
+neither `total_private_repos` nor `owned_private_repos` beyond their type, so
+there is no authoritative statement either way (checked 2026-09-30). What is
+established is only the part the sweep depends on: **the declared count and
+the enumeration can disagree in this direction, and a broader token does not
+close the gap.** The evidence and its limits are set out under "When the
+counts disagree" below; this is not a transient and not a partial grant.
 
 So the direction of the comparison carries the entire safety property, and the
 two directions are not symmetric:
 
 * **Enumerated fewer than declared** — a genuine coverage gap: the token
   cannot see repositories the org says exist. Hard error, non-zero exit.
-* **Enumerated as many as declared, or more** — no coverage gap. The run
-  proceeds.
+* **Enumerated as many as declared, or more** — no *shortfall* against the
+  declared count. The run proceeds.
+
+Read the second line for exactly what it says. Equal or greater counts show
+the absence of a shortfall; they do **not** establish that no repository was
+missed. A run that failed to see one declared repository while enumerating one
+the counter leaves out lands precisely on `enumerated == declared` and looks
+perfect. Count arithmetic cannot separate those two cases in either direction,
+and neither the sweep nor this document claims otherwise.
 
 What the run must not do is fold the second case into a claim that the two
-numbers *agree*. An excess is reported as an excess, with the advisory-fork
+numbers *agree*. An excess is reported as an excess, with the candidate
 explanation attached, rather than rendered as "the org declares N public + M
 non-public and both were fully enumerated" — a sentence which asserts an
-equality that does not hold in the state measured above. **This document
-describes the sweep's behaviour after that correction.** The version merged
-in PR #65 did render the excess case as agreement; that wording is being
-fixed alongside this document, and the description here assumes the fix.
+equality that does not hold in the state measured above. The version first
+merged for this sweep did render the excess case as agreement; the wording and
+the both-directions comparison were corrected before this document landed, and
+"When the counts disagree" below describes the behaviour as it now stands.
 
 Two further limits on VERIFIED, so it is not read as more than it is. It does
 not establish that the token could read the *contents* of every repository it
