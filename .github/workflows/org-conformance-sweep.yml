@@ -468,8 +468,8 @@ jobs:
             if [ -n "${CMP_ST[$ref]:-}" ]; then return 0; fi
             j=$(gh api "/repos/$ORG/.github/compare/$ref...main" 2>/dev/null) || return 1
             CMP_ST[$ref]=$(printf '%s' "$j" | jq -r '.status')
-            CMP_AHEAD[$ref]=$(printf '%s' "$j" | jq -r '.ahead_by')
-            CMP_DATE[$ref]=$(printf '%s' "$j" | jq -r '.base_commit.commit.committer.date')
+            CMP_AHEAD[$ref]=$(printf '%s' "$j" | jq -r '.ahead_by // 0')
+            CMP_DATE[$ref]=$(printf '%s' "$j" | jq -r '.base_commit.commit.committer.date // empty')
             CMP_DEGRADED[$ref]=""
             if ! printf '%s' "$j" | jq -e 'has("files")' >/dev/null 2>&1; then
               # Omitted entirely. There is no changed-file list to intersect,
@@ -479,9 +479,13 @@ jobs:
             else
               CMP_FILES[$ref]=$(printf '%s' "$j" \
                 | jq -r '[.files[]?.filename | select(startswith(".github/workflows/"))] | join(" ")')
-              nfiles=$(printf '%s' "$j" | jq -r '.files | length')
-              ncommits=$(printf '%s' "$j" | jq -r '.commits | length')
-              total=$(printf '%s' "$j" | jq -r '.total_commits')
+              # `// 0` on every one of these: an absent key yields the string
+              # "null", and `[ null -gt 250 ]` writes "integer expected" to a
+              # PUBLIC step log and silently takes the else branch. Defaulting
+              # in jq keeps the arithmetic arithmetic.
+              nfiles=$(printf '%s' "$j"   | jq -r '(.files    | length) // 0')
+              ncommits=$(printf '%s' "$j" | jq -r '(.commits  | length) // 0')
+              total=$(printf '%s' "$j"    | jq -r '.total_commits // 0')
               if [ "$nfiles" -ge "$CMP_FILE_CAP" ]; then
                 CMP_DEGRADED[$ref]="files-truncated-at-$nfiles"
               elif [ "$ncommits" -ge "$CMP_COMMIT_CAP" ] || [ "$total" -gt "$CMP_COMMIT_CAP" ]; then
@@ -521,7 +525,13 @@ jobs:
               elif ! compare_ref "$ref"; then
                 sev=UNRESOLVABLE
               else
-                days=$(( ( NOW - $(date -u -d "${CMP_DATE[$ref]}" +%s) ) / 86400 ))
+                # Same lesson as the unbound slice below: never hand an
+                # unvalidated value to `date -d`. A compare that somehow
+                # carries no base commit leaves the age unknown rather than
+                # aborting the sweep.
+                if [ -n "${CMP_DATE[$ref]:-}" ]; then
+                  days=$(( ( NOW - $(date -u -d "${CMP_DATE[$ref]}" +%s) ) / 86400 ))
+                fi
                 eff="$wf"
                 if [ "$wf" = required.yml ]; then eff="$wf $SIBLINGS"; fi
                 for e in $eff; do
