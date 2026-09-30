@@ -87,9 +87,10 @@ how the previous revision's figures drifted. Enumerate, exclude, then count —
 the reproduction command is in the header of
 [`labels.base.yml`](./labels.base.yml).
 
-Live label state moves: the "names carrying more than one colour" figure was 26
-at 14:30Z and 25 at 14:37Z. Re-measure before quoting; do not adjust a stale
-number.
+Compare hex colours **case-insensitively**. One label name is written `512BD4`
+in one repo and `512bd4` in another; a case-sensitive compare reports that as
+two colours and inflates the divergence count by one. Every colour figure here
+is case-insensitive.
 
 | measured over that population | 2026-09-30T14:30Z |
 | --- | --- |
@@ -97,7 +98,7 @@ number.
 | distinct label names | 220 |
 | names existing in exactly one repo | 132 |
 | names live in 12+ repositories | 35 |
-| names carrying more than one colour | 25 |
+| names carrying more than one colour (hex compared case-insensitively) | 25 |
 
 #### What adoption costs and changes
 

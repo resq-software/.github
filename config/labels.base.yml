@@ -8,10 +8,16 @@
 # ---------------------------------------------------------------------------
 # Population — what every count below was measured over
 # ---------------------------------------------------------------------------
-# Measured 2026-09-30T14:30-14:39Z. Every figure in this file is a count taken
-# then, not an estimate, and label state moves: the "names carrying more than
-# one colour" figure below was 26 at 14:30Z and 25 at 14:37Z. Re-measure before
-# quoting any of it; do not adjust a stale number.
+# Measured 2026-09-30, 14:30-14:47Z, and re-measured at 14:47Z with every
+# figure unchanged. Each one is a count taken then, not an estimate.
+#
+# One caution, from a mistake made while producing these numbers. The "names
+# carrying more than one colour" figure came out 26 on one pass and 25 on
+# another. That was NOT the live state moving: it was a case-SENSITIVE compare
+# of hex colours. One name is written 512BD4 in one repo and 512bd4 in another
+# — the same colour. GitHub's API returns whatever case was written, so compare
+# label colours case-INSENSITIVELY or you will count drift that is not there.
+# The honest figure is 25, and it held across every reading.
 #
 # The population is every repository this org owns — public and not — as
 # `GET /orgs/<org>/repos?type=all --paginate` returns them, MINUS the temporary
@@ -36,8 +42,9 @@
 #   132  of those names exist in exactly ONE repo — the shadow taxonomy this
 #        file exists to stop growing
 #    35  names are live in 12 or more repositories
-#    25  names carry more than one colour across repos (26 seven minutes
-#        earlier). 15 of the 25 are in this file, so adopting it settles them.
+#    25  names carry more than one colour across repos, comparing hex
+#        case-insensitively. 15 of the 25 are in this file, so adopting it
+#        settles them.
 #
 # ---------------------------------------------------------------------------
 # Inclusion rule
