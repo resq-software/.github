@@ -649,9 +649,9 @@ jobs:
           # The gate passed — correctly, nothing declared was missing — and the
           # VERIFIED summary sentence then went on asserting "the org declares
           # $dec_pub public + $dec_priv non-public and both were fully
-          # enumerated", an AGREEMENT, on a run where 10 non-public
-          # repositories were enumerated against a declared 9. The numbers did
-          # not agree and the report said they did.
+          # enumerated", an AGREEMENT — on a run where the non-public
+          # enumeration exceeded the declared count. The numbers did not agree
+          # and the report said they did.
           #
           # The two directions mean opposite things, so they are handled apart:
           #
@@ -693,20 +693,20 @@ jobs:
           # the number of open advisory drafts an expected steady state rather
           # than a transient to chase.
           #
-          # WHAT SUPPORTS IT, measured against this org 2026-09-30T14:32Z:
-          # declared `total_private_repos` 9, enumerated 10, and exactly one
-          # enumerated non-public repository carries the advisory fork's name
-          # shape — the excess is the same size as the single candidate. In the
-          # same org object `owned_private_repos` reads 10, matching the
-          # enumeration, so whatever is being left out is left out by
-          # `total_private_repos` specifically rather than by the org object as
-          # a whole.
+          # WHAT SUPPORTS IT. When this org was measured, the non-public
+          # excess was the same size as the advisory-fork name-shape count,
+          # and `owned_private_repos` in the same org object matched the
+          # enumeration — so whatever is being left out is left out by
+          # `total_private_repos` specifically rather than by the org object
+          # as a whole. The figures are not reproduced here: they move, and
+          # the size of the candidate is non-public in its own right. A run of
+          # this workflow renders the current state.
           #
           # WHAT DOES NOT, stated because one coincidence is not a mechanism.
-          # This is a single org at a single moment: an excess of 1 against
-          # exactly one candidate, which cannot distinguish "the counter omits
-          # THIS repository" from "the counter omits some other repository and
-          # counts the advisory fork". GitHub's REST reference for
+          # This is a single org at a single moment, and agreement in
+          # magnitude cannot distinguish "the counter omits THIS repository"
+          # from "the counter omits some other repository and counts the
+          # advisory fork". GitHub's REST reference for
           # `GET /orgs/{org}` lists `total_private_repos` and
           # `owned_private_repos` as bare integers with NO description, so
           # there is no authoritative statement either way (checked
@@ -719,7 +719,9 @@ jobs:
           # THE CLASS IS NAMED HERE; THE INSTANCE IS NOT, deliberately. An
           # advisory fork's NAME EMBEDS ITS GHSA ID, and this file, this log
           # and this job summary are all world-readable. The reconciliation
-          # below therefore COUNTS name-shape matches and emits only the count.
+          # below therefore compares name-shape matches against the excess and
+          # publishes only WHETHER they agree in size — never the size itself,
+          # which would disclose how many advisories the org has in draft.
           # Name shape is a heuristic, not an authoritative classification, so
           # it is used only to say whether an excess is accounted for — never
           # to suppress one.
@@ -2045,8 +2047,8 @@ jobs:
             # "**complete and VERIFIED** on both sides — the org declares
             # $dec_pub public + $dec_priv non-public and both were fully
             # enumerated" asserts an AGREEMENT, and it printed that agreement
-            # on a run whose non-public figures were 10 enumerated against 9
-            # declared. The MODE now comes from `priv_mode`; whether the
+            # on a run whose non-public enumeration exceeded the declared
+            # count. The MODE now comes from `priv_mode`; whether the
             # figures MATCHED comes from the excess counters; and no sentence
             # below claims the second while only the first holds.
             #
