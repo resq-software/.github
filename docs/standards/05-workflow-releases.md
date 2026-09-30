@@ -163,9 +163,11 @@ the non-public side. That is a floor, not an identity.
 
 The difference is live rather than theoretical: measured against this org,
 `total_private_repos` reads lower than a full `type=all` enumeration of the
-non-public side, and at least one enumerated non-public repository carries the
-name shape of a GitHub security-advisory temporary fork. Such forks are
-enumerable and are scanned by the sweep. The current figures are whatever the
+non-public side. GitHub security-advisory temporary forks are enumerable and
+are scanned by the sweep, and are the leading candidate for a difference of
+this shape. Whether any such fork exists at a given moment is deliberately not
+recorded here: that is a statement about how many advisories the organisation
+has in draft, which is non-public independently of any repository name. The current figures are whatever the
 latest run of `org-conformance-sweep.yml` renders; they are not copied into
 this document, because they move and because the size of that candidate is
 non-public in its own right.
