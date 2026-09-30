@@ -959,7 +959,19 @@ jobs:
               # an earlier revision got wrong in the other direction.
               last_run_failed=no
               late_by_cadence=no
-              if [ "$when" != - ] && [ "$conc" != success ]; then last_run_failed=yes; fi
+              # Only a run that CONCLUDED in failure counts. `conclusion` is
+              # null while a run is queued or in progress, which the jq
+              # `// "none"` renders as `none`; the earlier `!= success` test
+              # therefore reported an in-flight run as a failed one, with a
+              # public warning, on every sweep that happened to overlap a run.
+              # `cancelled`, `skipped`, `neutral` and `action_required` are
+              # likewise not evidence that a workflow is broken. Measured
+              # against every active lock workflow in the org at the time of
+              # writing: the only live conclusions are `failure` (31) and
+              # `success` (9), so narrowing this loses no real finding.
+              case "$conc" in
+                failure|timed_out|startup_failure) last_run_failed=yes ;;
+              esac
               if [ "$win" -gt 0 ] && [ "$days" -ge 0 ] && [ "$days" -ge "$win" ]; then
                 late_by_cadence=yes
               fi
