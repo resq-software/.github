@@ -346,21 +346,19 @@ drafts an expected steady state rather than something to chase, clearing when
 the advisory is published or withdrawn.
 
 **That is a hypothesis, not an established mechanism, and this document does
-not have the evidence to call it more.** What is measured, against this org at
-2026-09-30T14:32Z:
+not have the evidence to call it more.** What has been measured against this
+org is that the non-public excess and the advisory-fork name-shape count agree
+in size, and that `owned_private_repos` in the same org object matches the
+enumeration — so whatever is being left out is left out by
+`total_private_repos` specifically, not by the org object as a whole. The
+figures themselves are deliberately not written down here: they move, they go
+stale, and the size of the candidate is non-public in its own right. The
+current state is what a run of `org-conformance-sweep.yml` renders.
 
-* declared `total_private_repos` **9**, enumerated non-public **10** — an
-  excess of exactly **1**;
-* exactly **1** enumerated non-public repository carries the advisory-fork
-  name shape, so the excess is the same size as the single candidate;
-* in the same org object, `owned_private_repos` reads **10** and matches the
-  enumeration — so whatever is being left out is left out by
-  `total_private_repos` specifically, not by the org object as a whole.
-
-What that does *not* establish. It is one org at one moment, and an excess of
-1 against exactly one candidate cannot distinguish "the counter omits this
-repository" from "the counter omits some other repository while counting the
-advisory fork". GitHub's REST reference for `GET /orgs/{org}` lists both
+What that does *not* establish. It is one org at one moment, and agreement in
+magnitude cannot distinguish "the counter omits this repository" from "the
+counter omits some other repository while counting the advisory fork".
+GitHub's REST reference for `GET /orgs/{org}` lists both
 `total_private_repos` and `owned_private_repos` as bare integers with **no
 description at all**, so there is no authoritative statement either way
 (checked 2026-09-30); if one is later found, it belongs here. A public feature
@@ -375,9 +373,10 @@ is an explanation offered, never a clearance granted; an excess that does
 *not* match is worth investigating, because something else is then being left
 out of the count that the completeness arithmetic rests on.
 
-Only counts are ever printed for this. An advisory fork's name embeds its GHSA
-id and this repository is public, so the job summary, the annotations and the
-step log would carry it.
+Only *whether* the two agree in size is ever printed — never the size itself,
+which would disclose how many advisories the org has in draft. An advisory
+fork's name embeds its GHSA id, and this repository is public, so the job
+summary, the annotations and the step log would all carry whatever is printed.
 
 The public side is handled the same way, and has no known exclusion:
 `public_repos` counts archived public repositories and the enumeration is

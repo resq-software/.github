@@ -661,9 +661,9 @@ jobs:
           # The gate passed — correctly, nothing declared was missing — and the
           # VERIFIED summary sentence then went on asserting "the org declares
           # $dec_pub public + $dec_priv non-public and both were fully
-          # enumerated", an AGREEMENT, on a run where 10 non-public
-          # repositories were enumerated against a declared 9. The numbers did
-          # not agree and the report said they did.
+          # enumerated", an AGREEMENT — on a run where the non-public
+          # enumeration exceeded the declared count. The numbers did not agree
+          # and the report said they did.
           #
           # The two directions mean opposite things, so they are handled apart:
           #
@@ -705,20 +705,20 @@ jobs:
           # the number of open advisory drafts an expected steady state rather
           # than a transient to chase.
           #
-          # WHAT SUPPORTS IT, measured against this org 2026-09-30T14:32Z:
-          # declared `total_private_repos` 9, enumerated 10, and exactly one
-          # enumerated non-public repository carries the advisory fork's name
-          # shape — the excess is the same size as the single candidate. In the
-          # same org object `owned_private_repos` reads 10, matching the
-          # enumeration, so whatever is being left out is left out by
-          # `total_private_repos` specifically rather than by the org object as
-          # a whole.
+          # WHAT SUPPORTS IT. When this org was measured, the non-public
+          # excess was the same size as the advisory-fork name-shape count,
+          # and `owned_private_repos` in the same org object matched the
+          # enumeration — so whatever is being left out is left out by
+          # `total_private_repos` specifically rather than by the org object
+          # as a whole. The figures are not reproduced here: they move, and
+          # the size of the candidate is non-public in its own right. A run of
+          # this workflow renders the current state.
           #
           # WHAT DOES NOT, stated because one coincidence is not a mechanism.
-          # This is a single org at a single moment: an excess of 1 against
-          # exactly one candidate, which cannot distinguish "the counter omits
-          # THIS repository" from "the counter omits some other repository and
-          # counts the advisory fork". GitHub's REST reference for
+          # This is a single org at a single moment, and agreement in
+          # magnitude cannot distinguish "the counter omits THIS repository"
+          # from "the counter omits some other repository and counts the
+          # advisory fork". GitHub's REST reference for
           # `GET /orgs/{org}` lists `total_private_repos` and
           # `owned_private_repos` as bare integers with NO description, so
           # there is no authoritative statement either way (checked
@@ -731,7 +731,9 @@ jobs:
           # THE CLASS IS NAMED HERE; THE INSTANCE IS NOT, deliberately. An
           # advisory fork's NAME EMBEDS ITS GHSA ID, and this file, this log
           # and this job summary are all world-readable. The reconciliation
-          # below therefore COUNTS name-shape matches and emits only the count.
+          # below therefore compares name-shape matches against the excess and
+          # publishes only WHETHER they agree in size — never the size itself,
+          # which would disclose how many advisories the org has in draft.
           # Name shape is a heuristic, not an authoritative classification, so
           # it is used only to say whether an excess is accounted for — never
           # to suppress one.
@@ -944,7 +946,7 @@ jobs:
                 echo "\`enumerated\` exceeds \`declared\` above. That is **not** the failure that stopped this run: an excess means repositories were seen that the declared counter leaves out, never that a declared one was missed — the error annotation on this job names the check that did fail."
                 if [ "$excess_priv" -gt 0 ]; then
                   echo
-                  echo "**Non-public side, +$excess_priv.** The leading explanation is that \`total_private_repos\` does not count GitHub **security-advisory temporary forks**, which \`/orgs/{org}/repos\` does list — a hypothesis that fits the measurements taken here, not a documented behaviour. Name-shape matches among the enumerated non-public repositories: **$ghsa_shaped** (a count only — the name embeds a GHSA id and this summary is public)."
+                  echo "**Non-public side, +$excess_priv.** The leading explanation is that \`total_private_repos\` does not count GitHub **security-advisory temporary forks**, which \`/orgs/{org}/repos\` does list — a hypothesis that fits the measurements taken here, not a documented behaviour. Whether the excess reconciles against that explanation is checked, but the result is not published here: the number of security advisories an organisation currently has in draft is itself non-public, independently of the repository names involved. See the job log for the operator-facing detail."
                 fi
                 if [ "$excess_pub" -gt 0 ]; then
                   echo
@@ -2058,8 +2060,8 @@ jobs:
             # "**complete and VERIFIED** on both sides — the org declares
             # $dec_pub public + $dec_priv non-public and both were fully
             # enumerated" asserts an AGREEMENT, and it printed that agreement
-            # on a run whose non-public figures were 10 enumerated against 9
-            # declared. The MODE now comes from `priv_mode`; whether the
+            # on a run whose non-public enumeration exceeded the declared
+            # count. The MODE now comes from `priv_mode`; whether the
             # figures MATCHED comes from the excess counters; and no sentence
             # below claims the second while only the first holds.
             #
@@ -2091,9 +2093,9 @@ jobs:
               # ONLY: an advisory fork's name embeds its GHSA id and this
               # summary is world-readable.
               if [ "$excess_priv" -gt 0 ] && [ "$ghsa_shaped" -eq "$excess_priv" ]; then
-                excess_why="**Matches the known candidate:** \`total_private_repos\` is believed not to count GitHub **security-advisory temporary forks**, and exactly **$ghsa_shaped** enumerated non-public $ghsa_noun that fork's name shape, so the excess is the same size as the candidate. That is agreement in magnitude, not a demonstrated cause — counting cannot show WHICH repository the declared counter left out, and the exclusion is nowhere documented. Expected to persist while an advisory is in draft, and to clear when it is published or withdrawn."
+                excess_why="**Matches the known candidate:** \`total_private_repos\` is believed not to count GitHub **security-advisory temporary forks**, and the excess is exactly the size of that candidate. That is agreement in magnitude, not a demonstrated cause — counting cannot show WHICH repository the declared counter left out, and the exclusion is nowhere documented. Expected to persist while an advisory is in draft, and to clear when it is published or withdrawn. The candidate's size is deliberately not printed: how many advisories an organisation has in draft is non-public in its own right."
               elif [ "$excess_priv" -gt 0 ]; then
-                excess_why="**Does not match the known candidate:** **$ghsa_shaped** enumerated non-public $ghsa_noun the advisory-fork name shape, against an excess of **$excess_priv**. Something else is being left out of the declared count, and it is worth finding — the excess is exactly what this arithmetic rests on."
+                excess_why="**Does not match the known candidate:** the advisory-fork explanation does not account for an excess of **$excess_priv**. Something else is being left out of the declared count, and it is worth finding — the excess is exactly what this arithmetic rests on. The candidate's size is deliberately not printed here; see the job log."
               else
                 excess_why="**Unexplained:** no exclusion is known for the public side. \`public_repos\` counts archived public repositories and the enumeration is taken over \`type=all\`, so the two are meant to agree; an excess here is worth finding."
               fi
