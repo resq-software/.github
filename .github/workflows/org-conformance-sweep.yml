@@ -43,8 +43,10 @@
 # What the code depends on is established either way: the field is readable
 # under some tokens and absent under others, so without it the non-public side
 # of the assertion is UNVERIFIED (enumeration corroborated against an
-# independent listing, and a zero non-public enumeration refused) rather than
-# strict. See A1 below; the summary always states which mode ran.
+# independent listing WHEN THAT LISTING ANSWERS, and a zero non-public
+# enumeration refused) rather than strict. See A1 below; the summary always
+# states which mode ran, and whether the second listing actually corroborated
+# anything or was unavailable.
 #
 # Until such a token is available this job FAILS LOUDLY: the completeness
 # assertion below refuses to report a sweep that covered part of the org, and
@@ -423,7 +425,11 @@ jobs:
           #              all. A partial non-public GRANT stays undetectable in
           #              this mode — stated, not hidden, and the summary says
           #              UNVERIFIED so the report can never read as a clean
-          #              complete bill of health.
+          #              complete bill of health. That second listing can also
+          #              fail to answer at all, and then it corroborates
+          #              nothing: that is a THIRD outcome, `unavailable`, and
+          #              the summary reports it instead of claiming a check
+          #              that never ran.
           #
           # Either way the 2026-09-28 configuration still hard-fails: a
           # public-only token enumerates zero non-public repositories, and
@@ -463,23 +469,70 @@ jobs:
           # is interpolated directly rather than passed as a GraphQL variable:
           # a `$var` inside the query would need single quotes here, which the
           # linter correctly flags as SC2016 in the general case.
-          gql_pub=null; gql_priv=null
-          if gql=$(gh api graphql -f query="query{organization(login:\"$ORG\"){
-                       pub:repositories(privacy:PUBLIC){totalCount}
-                       priv:repositories(privacy:PRIVATE){totalCount}}}" 2>/dev/null); then
-            gql_pub=$(printf  '%s' "$gql" | jq -r '.data.organization.pub.totalCount  // "null"')
-            gql_priv=$(printf '%s' "$gql" | jq -r '.data.organization.priv.totalCount // "null"')
-          fi
+          #
+          # THE CORROBORATION HAS THREE OUTCOMES, NOT TWO. An earlier revision
+          # of this block treated it as a boolean and could not tell a check
+          # that PASSED from a check that never RAN: stderr went to
+          # /dev/null, a failed call left `gql_priv=null`, the `!= null` test
+          # then skipped the comparison in silence — and the summary went on
+          # asserting that the non-public side "is corroborated by a second,
+          # independent listing". In UNVERIFIED mode that listing is the ONLY
+          # independent check on the non-public enumeration, so a rate limit
+          # or a transient 5xx manufactured exactly the false assurance this
+          # job exists to remove. The states are now explicit, and both the
+          # annotations and the rendered summary depend on them:
+          #
+          #   corroborated  a count came back and it matched the enumeration
+          #   DISAGREED     a count came back and it did not match — one of
+          #                 the two listings is truncated; fails the run
+          #   unavailable   no count came back (rate limit, 5xx, a token
+          #                 GraphQL rejects, or a null totalCount)
+          #
+          # Retried, because `unavailable` now changes what the report says
+          # and one transient error should not rewrite the conclusion.
+          gql_pub=null; gql_priv=null; gql_err=''
+          gql_errf="$RUNNER_TEMP/sweep/gql.err"
+          for attempt in 1 2 3; do
+            if gql=$(gh api graphql -f query="query{organization(login:\"$ORG\"){
+                         pub:repositories(privacy:PUBLIC){totalCount}
+                         priv:repositories(privacy:PRIVATE){totalCount}}}" 2>"$gql_errf"); then
+              gql_pub=$(printf  '%s' "$gql" | jq -r '.data.organization.pub.totalCount  // "null"')
+              gql_priv=$(printf '%s' "$gql" | jq -r '.data.organization.priv.totalCount // "null"')
+            fi
+            if [ "$gql_pub" != null ] || [ "$gql_priv" != null ]; then
+              gql_err=''
+              break
+            fi
+            # Kept, not discarded: the REASON a corroboration did not run is
+            # the whole difference between "checked" and "unchecked", and it
+            # is what tells a reader whether to retry or to fix the token.
+            gql_err=$(tr -d '\r' < "$gql_errf" | tr '\n' ' ' | sed 's/  */ /g; s/^ //; s/ $//' | cut -c1-200)
+            [ "$attempt" -eq 3 ] || sleep 5
+          done
+
+          corr_pub=unavailable; corr_priv=unavailable
           for side in pub priv; do
             case "$side" in
               pub)  g=$gql_pub;  e=$enum_pub  ;;
               priv) g=$gql_priv; e=$enum_priv ;;
             esac
-            if [ "$g" != null ] && [ "$g" -ne "$e" ]; then
+            if [ "$g" = null ]; then
+              st=unavailable
+            elif [ "$g" -ne "$e" ]; then
+              st=DISAGREED
               echo "::error title=org-conformance-sweep::two independent listings disagree on the $side repository count ($e via /orgs/$ORG/repos, $g via GraphQL). One of them is truncated, so the enumeration is not trustworthy."
               incomplete=1
+            else
+              st=corroborated
             fi
+            case "$side" in
+              pub)  corr_pub=$st  ;;
+              priv) corr_priv=$st ;;
+            esac
           done
+          if [ "$corr_pub" = unavailable ] || [ "$corr_priv" = unavailable ]; then
+            echo "::warning title=org-conformance-sweep::the independent GraphQL listing returned no count (public: $corr_pub, non-public: $corr_priv) after 3 attempts, so it corroborates NOTHING on this run.${gql_err:+ gh reported: $gql_err}"
+          fi
 
           if [ "$dec_priv" != null ]; then
             priv_mode=VERIFIED
@@ -499,9 +552,24 @@ jobs:
             if [ "$enum_priv" -eq 0 ]; then
               echo "::error title=org-conformance-sweep::this token enumerated 0 non-public repositories AND cannot read the org's declared non-public count, so the sweep cannot tell a public-only token apart from an org that has none — and must not guess. Grant the existing org secret SYNC_TOKEN to this repository, or create ORG_READ_TOKEN (org-wide), fine-grained with Metadata + Contents + Actions: Read. Add Organization administration: Read to make the non-public count verifiable (VERIFIED mode); without it the non-public side is reported UNVERIFIED. Refusing to report a partial sweep as clean."
               incomplete=1
-            else
-              echo "::warning title=org-conformance-sweep::non-public coverage is UNVERIFIED: $enum_priv non-public repositories enumerated, but this token cannot read the org's declared count (that field needs Organization administration: Read). A partial non-public grant would be invisible on this run. The findings below are not a completeness guarantee for non-public repositories."
+            elif [ "$corr_priv" = unavailable ]; then
+              # UNVERIFIED **and** uncorroborated. Reported separately from
+              # plain UNVERIFIED because it is strictly weaker: with the
+              # declared count unreadable AND the second listing silent, a
+              # TRUNCATED non-public enumeration — not merely a partial
+              # grant — is also undetectable, and nothing else in this run
+              # would notice. Not a hard failure: the gate stays the
+              # enumeration-completeness assertion, and a job that goes red
+              # on a transient GraphQL error is a job that gets muted. It is
+              # instead said out loud here and in the summary.
+              echo "::warning title=org-conformance-sweep::non-public coverage is UNVERIFIED AND UNCORROBORATED: $enum_priv non-public repositories enumerated, this token cannot read the org's declared count (needs Organization administration: Read), and the independent GraphQL listing was $corr_priv, so NO check on the non-public enumeration ran on this run — not even the truncation check. Treat the non-public findings below as a single unconfirmed listing."
+            elif [ "$corr_priv" = corroborated ]; then
+              echo "::warning title=org-conformance-sweep::non-public coverage is UNVERIFIED: $enum_priv non-public repositories enumerated and corroborated against an independent GraphQL listing ($gql_priv), but this token cannot read the org's declared count (that field needs Organization administration: Read). A partial non-public grant would be invisible on this run. The findings below are not a completeness guarantee for non-public repositories."
             fi
+            # `corr_priv=DISAGREED` deliberately falls through with no message
+            # here: the disagreement already raised its own ::error above and
+            # set `incomplete=1`, so the run fails and never reaches a report
+            # this warning could qualify.
           fi
           if [ "$incomplete" -ne 0 ]; then
             {
@@ -509,10 +577,14 @@ jobs:
               echo
               echo "Enumeration did not cover the whole org, or could not be shown to, so **no conclusion about conformance can be drawn from this run.** The error annotation on this job says which check failed. When the cause is a missing token this is the intended outcome, not a flake."
               echo
-              echo "| side | declared | enumerated | second listing |"
-              echo "| --- | --- | --- | --- |"
-              echo "| public | $dec_pub | $enum_pub | $gql_pub |"
-              echo "| non-public | ${dec_priv/null/_not readable_} | $enum_priv | $gql_priv |"
+              echo "| side | declared | enumerated | second listing | corroboration |"
+              echo "| --- | --- | --- | --- | --- |"
+              echo "| public | $dec_pub | $enum_pub | ${gql_pub/null/_no count returned_} | $corr_pub |"
+              echo "| non-public | ${dec_priv/null/_not readable_} | $enum_priv | ${gql_priv/null/_no count returned_} | $corr_priv |"
+              if [ -n "$gql_err" ]; then
+                echo
+                echo "The independent GraphQL listing returned no count after 3 attempts. \`gh\` reported: \`$gql_err\`"
+              fi
               echo
               echo "Grant the existing org secret \`SYNC_TOKEN\` to this repository, or create \`ORG_READ_TOKEN\` org-wide — fine-grained, **Metadata: Read + Contents: Read + Actions: Read**."
               echo
@@ -1261,10 +1333,22 @@ jobs:
             echo
             echo "Token: \`$token_used\`. Enumerated **$enum_pub** public + **$enum_priv** non-public = **$((enum_pub + enum_priv))** repositories. Scanned **$total** non-archived."
             echo
+            # CONDITIONAL ON THE CHECK HAVING RUN. The previous revision
+            # asserted the corroboration unconditionally, so a run whose
+            # GraphQL listing never returned a count still printed that the
+            # non-public enumeration "is corroborated by a second, independent
+            # listing" — in UNVERIFIED mode the only independent check there
+            # was. The sentence now reports the outcome instead of assuming it.
+            case "$corr_priv" in
+              corroborated)
+                corr_priv_clause="are corroborated by a second, independent listing (GraphQL agrees: **$gql_priv**) but cannot be proven to be all of them" ;;
+              *)
+                corr_priv_clause="are **NOT corroborated by anything on this run** — the second, independent GraphQL listing returned no count after 3 attempts${gql_err:+ (\`$gql_err\`)}, so this count rests on one listing and a truncation of it would go unnoticed" ;;
+            esac
             if [ "$priv_mode" = VERIFIED ]; then
-              echo "Coverage: **complete and VERIFIED** on both sides — the org declares $dec_pub public + $dec_priv non-public and both were fully enumerated."
+              echo "Coverage: **complete and VERIFIED** on both sides — the org declares $dec_pub public + $dec_priv non-public and both were fully enumerated. Independent second listing: public \`$corr_pub\`, non-public \`$corr_priv\` — redundancy in this mode, because the declared counts are themselves the check."
             else
-              echo "Coverage: public side **complete and VERIFIED** against the org's declared $dec_pub. Non-public side **UNVERIFIED** — this token cannot read \`total_private_repos\`, so the $enum_priv non-public repositories enumerated here are corroborated by a second, independent listing but cannot be proven to be all of them. That field sits in the owner-only block of the org object, and what exactly gates it is **not established** (measured: absent under every non-member token tried, present under both org-owner tokens tried, one of them without \`admin:org\`). Adding **Organization administration: Read** to a fine-grained token is the suggested route to VERIFIED coverage and is **untested here**. **Do not read the non-public findings below as a complete bill of health.**"
+              echo "Coverage: public side **complete and VERIFIED** against the org's declared $dec_pub (independent second listing: \`$corr_pub\`). Non-public side **UNVERIFIED** — this token cannot read \`total_private_repos\`, so the $enum_priv non-public repositories enumerated here $corr_priv_clause. That field sits in the owner-only block of the org object, and what exactly gates it is **not established** (measured: absent under every non-member token tried, present under both org-owner tokens tried, one of them without \`admin:org\`). Adding **Organization administration: Read** to a fine-grained token is the suggested route to VERIFIED coverage and is **untested here**. **Do not read the non-public findings below as a complete bill of health.**"
             fi
             echo
             echo "Pin-drift and run-health findings below are **reported, not gated** — see the follow-up in the PR that introduced them. Only an incomplete enumeration fails this job."
@@ -1366,7 +1450,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           echo "sweep: $affected/$enum_pub public with findings, $unreadable unreadable; $np_affected non-public with findings"
-          echo "sweep: pins=$pin_total no-version=$pin_nover drifting=$pin_bad; run-health findings=$health_bad (non-green last run, counted independently of cadence: $health_last_run_failed); non-public coverage=$priv_mode"
+          echo "sweep: pins=$pin_total no-version=$pin_nover drifting=$pin_bad; run-health findings=$health_bad (non-green last run, counted independently of cadence: $health_last_run_failed); non-public coverage=$priv_mode second-listing=$corr_priv"
 
           # GATE. Deliberately narrow for this cycle.
           #

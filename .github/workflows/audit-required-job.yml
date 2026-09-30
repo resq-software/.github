@@ -194,19 +194,39 @@ jobs:
             fi
           }
 
-          cov_unreadable=0
+          # TWO QUANTITIES, TWO COUNTERS. An earlier revision added both into a
+          # single `cov_unreadable`, and the public issue then had to describe
+          # the mixed total as one kind of failure — so it made two false
+          # statements: it attributed the whole total to "enumerated and then
+          # failed to read", and it said all of them "appear in no list and no
+          # count below" when the read failures are precisely the ones that DO
+          # appear in the unreachable list and the non-public unreachable
+          # count. They are different failures with different causes and
+          # different fixes, so they are counted and reported separately:
+          #
+          #   cov_shortfall  DECLARED MINUS ENUMERATED. Never enumerated, so
+          #                  named nowhere below — not even as a row. Cause:
+          #                  the token cannot see them at all. Fix: a broader
+          #                  token.
+          #   cov_readfail   ENUMERATED, THEN THE READ FAILED. These DO appear
+          #                  below, in the unreachable list (public) or in the
+          #                  non-public unreachable count. Cause: per-repo, and
+          #                  often transient — a rate limit, a 5xx, or a repo
+          #                  the token may list but not read.
+          cov_shortfall=0
+          cov_readfail=0
           # Set when the shortfall is known to exist but is NOT MEASURABLE, so
-          # that `unreadable=0` is never published next to state=PARTIAL. See
+          # that `shortfall=0` is never published next to state=PARTIAL. See
           # the public-only-token branch below.
           cov_unreadable_unknown=0
 
           if [ "$dec_pub" != null ] && [ "$enum_pub" -lt "$dec_pub" ]; then
-            cov_unreadable=$(( cov_unreadable + dec_pub - enum_pub ))
+            cov_shortfall=$(( cov_shortfall + dec_pub - enum_pub ))
             cov_raise PARTIAL
           fi
           if [ "$dec_priv" != null ]; then
             if [ "$enum_priv" -lt "$dec_priv" ]; then
-              cov_unreadable=$(( cov_unreadable + dec_priv - enum_priv ))
+              cov_shortfall=$(( cov_shortfall + dec_priv - enum_priv ))
               cov_raise PARTIAL
             fi
           elif [ "$enum_priv" -eq 0 ]; then
@@ -228,7 +248,7 @@ jobs:
           else
             cov_raise UNVERIFIED
           fi
-          echo "coverage (preliminary, before the per-repo reads below): state=$cov_state enumerated=$enum_pub public + $enum_priv non-public; declared=$dec_pub + $dec_priv; unreadable=$cov_unreadable unknown-shortfall=$cov_unreadable_unknown (names withheld — this log is public)"
+          echo "coverage (preliminary, before the per-repo reads below): state=$cov_state enumerated=$enum_pub public + $enum_priv non-public; declared=$dec_pub + $dec_priv; never-enumerated=$cov_shortfall enumerated-but-unreadable=$cov_readfail unknown-shortfall=$cov_unreadable_unknown (names withheld — this log is public)"
 
           # Ruleset endpoint requires admin:org scope. If the available
           # token (GITHUB_TOKEN by default) can't read it, degrade
@@ -277,8 +297,11 @@ jobs:
             default=$(gh api "/repos/$ORG/$repo" --jq '.default_branch' 2>/dev/null || echo "")
             if [ -z "$default" ]; then
               # Enumerated but not readable. Either way this is partial
-              # coverage, whichever tier it falls in.
-              cov_unreadable=$((cov_unreadable + 1))
+              # coverage, whichever tier it falls in. Counted apart from the
+              # never-enumerated shortfall: this repo IS listed below, in the
+              # unreachable list or the non-public unreachable count, so the
+              # issue must not claim it "appears in no list".
+              cov_readfail=$((cov_readfail + 1))
               cov_raise PARTIAL
               if [ "$vis" = public ]; then
                 unreachable_list="${unreachable_list}- $repo"$'\n'
@@ -345,7 +368,7 @@ jobs:
           # it only there let this PUBLIC step log say `state=complete` while
           # the PUBLIC issue it then opened said PARTIAL. This one is emitted
           # after every writer has run and is the authoritative one.
-          echo "coverage (FINAL): state=$cov_state unreadable=$cov_unreadable unknown-shortfall=$cov_unreadable_unknown (names withheld — this log is public)"
+          echo "coverage (FINAL): state=$cov_state never-enumerated=$cov_shortfall enumerated-but-unreadable=$cov_readfail unknown-shortfall=$cov_unreadable_unknown (names withheld — this log is public)"
           echo "summary: ok=$ok_count  gaps=$gap_count  public-gaps=$((gap_count - np_gap))  non-public-gaps=$np_gap  unreachable-non-public=$np_unreachable"
 
           {
@@ -355,7 +378,8 @@ jobs:
             echo "np_exempt=$np_exempt"
             echo "np_ok=$np_ok"
             echo "cov_state=$cov_state"
-            echo "cov_unreadable=$cov_unreadable"
+            echo "cov_shortfall=$cov_shortfall"
+            echo "cov_readfail=$cov_readfail"
             echo "cov_unreadable_unknown=$cov_unreadable_unknown"
             echo "cov_enum=$((enum_pub + enum_priv))"
             echo "gap_list<<GAPEOF"
@@ -392,7 +416,8 @@ jobs:
           NP_UNREACHABLE: ${{ steps.scan.outputs.np_unreachable }}
           NP_EXEMPT: ${{ steps.scan.outputs.np_exempt }}
           COV_STATE: ${{ steps.scan.outputs.cov_state }}
-          COV_UNREADABLE: ${{ steps.scan.outputs.cov_unreadable }}
+          COV_SHORTFALL: ${{ steps.scan.outputs.cov_shortfall }}
+          COV_READFAIL: ${{ steps.scan.outputs.cov_readfail }}
           COV_ENUM: ${{ steps.scan.outputs.cov_enum }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           TITLE: 'chore(governance): required-job audit — missing `required` status-check gates and audit coverage'
@@ -409,21 +434,53 @@ jobs:
           # the two-tier split removed, and it is the only thing standing
           # between a partial audit and an issue that reads clean. Counts
           # only — no names, no branch names.
-          # N2: in the public-only-token mode the shortfall is real but not
-          # measurable — there is no declared non-public count to subtract the
-          # zero enumeration from — so `COV_UNREADABLE` is 0 there. Publishing
-          # "PARTIAL, 0 unreadable" understates a whole unread side of the org.
-          # Render it as unknown-but-nonzero on that path instead.
+          #
+          # TWO KINDS OF MISSING REPOSITORY, SAID SEPARATELY. An earlier
+          # revision summed them into one counter and had to describe the
+          # total as a single kind, which made the issue state two false
+          # things: it attributed never-enumerated repositories to a read
+          # failure, and it said they all "appear in no list and no count
+          # below" when the read failures are exactly the ones that DO appear.
+          # The two have different causes and different fixes, so they get
+          # different sentences:
+          #
+          #   COV_SHORTFALL  declared minus enumerated. NEVER ENUMERATED, so
+          #                  named nowhere below. Cause: this token cannot see
+          #                  them. Fix: a broader token.
+          #   COV_READFAIL   enumerated, then the read failed. ACCOUNTED FOR
+          #                  BELOW — by name in the unreachable list if
+          #                  public, in the non-public unreachable count
+          #                  otherwise. Cause: per-repo and often transient.
+          #                  Fix: usually a re-run.
+          #
+          # N2: in the public-only-token mode the never-enumerated shortfall
+          # is real but not measurable — there is no declared non-public count
+          # to subtract the zero enumeration from — so `COV_SHORTFALL` is 0
+          # there. Publishing "PARTIAL, 0 unreadable" understates a whole
+          # unread side of the org. Render it as unknown-but-nonzero instead.
           if [ "${COV_UNREADABLE_UNKNOWN:-0}" = 1 ]; then
-            shortfall="an **unknown, non-zero** number of this org's repositories"
-            shortfall_detail="The number cannot be given: this token enumerated **0** non-public repositories and cannot read the org's declared non-public count either, so the size of what it did not see is not measurable from inside this run."
-            if [ "${COV_UNREADABLE}" != 0 ]; then
-              shortfall_detail="${shortfall_detail} A further **${COV_UNREADABLE}** were enumerated and then failed to read."
-            fi
+            never_enum="An **unknown, non-zero** number of this org's repositories were **never enumerated**, so they were not audited at all and appear in no list and no count below. The number cannot be given: this token enumerated **0** non-public repositories and cannot read the org's declared non-public count either, so the size of what it did not see is not measurable from inside this run."
+          elif [ "${COV_SHORTFALL:-0}" != 0 ]; then
+            if [ "${COV_SHORTFALL}" = 1 ]; then ne_v="was"; ne_p="it was"; ne_a="appears"
+            else                                ne_v="were"; ne_p="they were"; ne_a="appear"; fi
+            never_enum="**${COV_SHORTFALL}** of this org's repositories $ne_v **never enumerated** — the org declares more than this token could list — so $ne_p not audited at all and $ne_a in no list and no count below."
           else
-            shortfall="**${COV_UNREADABLE}** of this org's repositories"
-            shortfall_detail=""
+            never_enum=""
           fi
+          if [ "${COV_READFAIL:-0}" != 0 ]; then
+            if [ "${COV_READFAIL}" = 1 ]; then rf_n="repository **was**"; rf_d="it **is**"; else rf_n="repositories **were**"; rf_d="those **are**"; fi
+            read_failed="Separately, **${COV_READFAIL}** $rf_n enumerated and then failed to read. Unlike the never-enumerated ones, $rf_d accounted for below — public ones by name under *unreachable*, non-public ones in the non-public unreachable count — and the cause is per-repo rather than a token gap: a rate limit, a 5xx, or a repository this token may list but not read. A re-run often clears it."
+          else
+            read_failed=""
+          fi
+          cov_detail=""
+          for s in "$never_enum" "$read_failed"; do
+            [ -n "$s" ] || continue
+            cov_detail="${cov_detail:+$cov_detail }$s"
+          done
+          # Reachable only if the state was raised by something neither
+          # counter saw; say so rather than rendering an empty warning.
+          [ -n "$cov_detail" ] || cov_detail="Coverage was not established as complete, and neither counter attributes it — see the \`coverage (FINAL)\` line in the run log."
 
           case "$COV_STATE" in
             complete)
@@ -437,7 +494,7 @@ jobs:
               coverage="> [!WARNING]
           > **Coverage was INCOMPLETE — do not read this issue as a clean bill of health.**
           >
-          > The audit runner could not read ${shortfall}, so they were **not audited at all** and appear in no list and no count below. ${shortfall_detail} Names are withheld: this issue is public.
+          > ${cov_detail} Names are withheld: this issue is public.
           >
           > Grant a token that can read the whole org — the existing org secret \`SYNC_TOKEN\` granted to this repository, or an org-wide \`ORG_READ_TOKEN\` (fine-grained: Metadata + Contents read) — and re-run. Until then this audit is partial by construction."
               ;;

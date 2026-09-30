@@ -92,6 +92,19 @@ org-wide `ORG_READ_TOKEN`, fine-grained with Metadata, Contents and Actions
 read. Until one is available the weekly run is red on purpose. A clean report
 from it now means clean, not silent.
 
+That guarantee is bounded by which mode the run was in, and the bound matters
+because the report is easy to over-read. A **VERIFIED** report is the strong
+claim: both sides were checked against the org's own declared counts, so a
+clean result means every repository in the org was checked. An **UNVERIFIED**
+report is not that claim and must not be quoted as one. It establishes that
+the public side is complete and that the token can see *some* non-public
+repositories; it **cannot prove that it saw every non-public repository**,
+because the declared count it would have to check against is unreadable, and a
+partial non-public grant looks identical to a full one from inside the run. So
+a clean UNVERIFIED report is evidence that nothing was found among the
+repositories that *were* read — not proof that every repository was read. The
+summary names the mode on every run for exactly this reason.
+
 Completeness is asserted in one of two modes, and the summary says which one
 ran. The org's `public_repos` field is public, so the public side is always
 checked strictly against it. The non-public side depends on
@@ -125,6 +138,18 @@ refuses to continue if it enumerated no non-public repositories at all — which
 is exactly the 2026-09-28 public-only-token configuration. A partial
 non-public *grant* is only detectable in VERIFIED mode; that limitation is
 printed in the summary rather than papered over.
+
+That corroboration has three outcomes, not two, because the GraphQL call can
+also simply fail — a rate limit, a transient 5xx, a token GraphQL rejects. The
+sweep therefore reports it as `corroborated`, `DISAGREED` or `unavailable`
+rather than as a boolean. A disagreement means one of the two listings is
+truncated and fails the run. `unavailable` does not fail the run — the gate
+stays the enumeration-completeness assertion, and a job that goes red on a
+transient error is a job that gets muted — but it does change what the report
+says: in UNVERIFIED mode the GraphQL listing is the *only* independent check on
+the non-public enumeration, so when it does not answer the summary states that
+the non-public count is corroborated by nothing on that run, instead of
+claiming a check that never ran.
 
 Run health asks two independent questions, and only one of them involves
 cadence:
