@@ -34,7 +34,7 @@ config-file: |
   .github/labels.yml
 ```
 
-Two constraints the action imposes, both load-bearing:
+Three constraints the action imposes, all load-bearing:
 
 - **Configs are concatenated, not merged.** A name present in both files is
   emitted twice and applied by two concurrent, conflicting API calls — not
@@ -42,10 +42,56 @@ Two constraints the action imposes, both load-bearing:
   base; it holds additions only.
 - **Pin the URL to a tag or commit SHA**, not a branch. A branch URL re-points
   every repo's labels the moment this file changes, with no review in between.
+- **Never write a bare filename as a `config-file` entry.** The action decides
+  local-vs-remote with a regex whose protocol group is optional
+  (`^(https?:\/\/)?…`), so a bare `labels.base.yml` parses as the *domain*
+  `labels.base` with TLD `yml` and is **fetched over the network** — which
+  fails, or worse, silently resolves against something you do not control.
+
+  | `config-file` entry | treated as |
+  | --- | --- |
+  | `labels.base.yml` | **remote URL** — wrong |
+  | `labels-base.yml` | **remote URL** — wrong |
+  | `.github/labels.yml` | local file — correct |
+  | `./labels.base.yml` | local file — correct |
+  | `config/labels.base.yml` | local file — correct |
+
+  A `/` or a leading `.` anywhere before the first dot defeats the domain
+  match, which is why the existing `.github/labels.yml` entries work. Keep the
+  `.github/` prefix on every local entry and this never bites.
 
 Keep `delete-other-labels: false`. Flipping it to `true` deletes every live
 label a repo's config does not list, and a deleted label is removed from every
 issue and PR that carried it.
+
+### What the base contains, and why
+
+46 labels in eight axes. A name is in the base when automation depends on its
+exact string in **more than one** repo, or when it is already live in 12+ of
+the org's 21 repos and completes an axis the base already carries. Repo-local
+automation — Dependabot ecosystem labels, the `area:*` / `pkg:*` / `crate:*`
+namespaces, single-repo agentic labels — stays in the repo's own `labels.yml`.
+The file's own header states the rule and the per-axis evidence.
+
+Adopting the base means **removing** the overlapping names from a repo's
+`labels.yml`, or the concatenation bug above fires. Across the 13 repos that
+carry a `labels.yml` today that is 386 declarations to delete.
+
+What adoption does to live labels, measured against all 21 repos' current
+state — every one of the 46 names is already live somewhere, so the base
+**creates no new name anywhere in the org**; it only normalises:
+
+| effect on an existing live label | count |
+| --- | --- |
+| already identical — no change | 335 |
+| description rewritten, colour kept | 123 |
+| **recoloured** | **119** |
+
+The 119 recolours are the intended effect: `size/*` alone carries four
+different colours across the org, and `javascript`, `github-actions`,
+`A-DevOps`, `P1: high` and `P3: low` each carry two or more. Same name, same
+meaning, different colour per repo is unmanaged drift, and normalising it is
+name-safe — no automation reads a colour.
 
 See [`docs/standards/02-languages.md`](../docs/standards/02-languages.md) for the
 per-language rules these encode, and the [standards index](../docs/standards/)
