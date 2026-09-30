@@ -20,6 +20,32 @@ settings — repos adopt them so "what does conformant look like" has one answer
 | [`dotnet/Directory.Build.props`](./dotnet/Directory.Build.props) | MSBuild / Roslyn analyzers | drop at repo root (auto-imported) |
 | [`sql/.sqlfluff`](./sql/.sqlfluff) | SQLFluff | copy to repo root |
 | [`.markdownlint.jsonc`](./.markdownlint.jsonc) | markdownlint | copy to repo root |
+| [`labels.base.yml`](./labels.base.yml) | EndBug/label-sync | **reference** by raw URL (see below) |
+
+## Issue labels (label-sync)
+
+[`labels.base.yml`](./labels.base.yml) is the exception to the copy rule above:
+`EndBug/label-sync` accepts multiple `config-file` entries, including URLs, so
+repos adopt the base **by reference** and keep only their own additions locally.
+
+```yaml
+config-file: |
+  https://raw.githubusercontent.com/resq-software/.github/<tag-or-sha>/config/labels.base.yml
+  .github/labels.yml
+```
+
+Two constraints the action imposes, both load-bearing:
+
+- **Configs are concatenated, not merged.** A name present in both files is
+  emitted twice and applied by two concurrent, conflicting API calls — not
+  "the last one wins". A repo's `labels.yml` must stay **disjoint** from the
+  base; it holds additions only.
+- **Pin the URL to a tag or commit SHA**, not a branch. A branch URL re-points
+  every repo's labels the moment this file changes, with no review in between.
+
+Keep `delete-other-labels: false`. Flipping it to `true` deletes every live
+label a repo's config does not list, and a deleted label is removed from every
+issue and PR that carried it.
 
 See [`docs/standards/02-languages.md`](../docs/standards/02-languages.md) for the
 per-language rules these encode, and the [standards index](../docs/standards/)
