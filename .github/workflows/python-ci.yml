@@ -69,7 +69,7 @@ jobs:
   lint:
     if: ${{ inputs.run-lint }}
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'true' && fromJSON('["self-hosted","linux","x64","zima"]') || 'ubuntu-latest' }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
       run:
@@ -101,7 +101,7 @@ jobs:
   typecheck:
     if: ${{ inputs.run-typecheck }}
     name: Type Check
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'true' && fromJSON('["self-hosted","linux","x64","zima"]') || 'ubuntu-latest' }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
       run:
@@ -127,7 +127,7 @@ jobs:
   test:
     if: ${{ inputs.run-test }}
     name: Test (py${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'true' && fromJSON('["self-hosted","linux","x64","zima"]') || 'ubuntu-latest' }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     strategy:
       fail-fast: false
@@ -158,7 +158,7 @@ jobs:
   build:
     if: ${{ inputs.run-build }}
     name: Build wheel
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.USE_SELF_HOSTED == 'true' && fromJSON('["self-hosted","linux","x64","zima"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     defaults:
       run:
