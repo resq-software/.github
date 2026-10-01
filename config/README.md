@@ -20,6 +20,82 @@ settings — repos adopt them so "what does conformant look like" has one answer
 | [`dotnet/Directory.Build.props`](./dotnet/Directory.Build.props) | MSBuild / Roslyn analyzers | drop at repo root (auto-imported) |
 | [`sql/.sqlfluff`](./sql/.sqlfluff) | SQLFluff | copy to repo root |
 | [`.markdownlint.jsonc`](./.markdownlint.jsonc) | markdownlint | copy to repo root |
+| [`labels.base.yml`](./labels.base.yml) | EndBug/label-sync | **reference** by raw URL (see below) |
+
+## Issue labels (label-sync)
+
+[`labels.base.yml`](./labels.base.yml) is the exception to the copy rule above:
+`EndBug/label-sync` accepts multiple `config-file` entries, including URLs, so
+repos adopt the base **by reference** and keep only their own additions locally.
+
+```yaml
+config-file: |
+  https://raw.githubusercontent.com/resq-software/.github/<tag-or-sha>/config/labels.base.yml
+  .github/labels.yml
+```
+
+Three constraints the action imposes, all load-bearing:
+
+- **Configs are concatenated, not merged.** A name present in both files is
+  emitted twice and applied by two concurrent, conflicting API calls — not
+  "the last one wins". A repo's `labels.yml` must stay **disjoint** from the
+  base; it holds additions only.
+- **Pin the URL to a tag or commit SHA**, not a branch. A branch URL re-points
+  every repo's labels the moment this file changes, with no review in between.
+- **Never write a bare filename as a `config-file` entry.** The action decides
+  local-vs-remote with a regex whose protocol group is optional
+  (`^(https?:\/\/)?…`), so a bare `labels.base.yml` parses as the *domain*
+  `labels.base` with TLD `yml` and is **fetched over the network** — which
+  fails, or worse, silently resolves against something you do not control.
+
+  | `config-file` entry | treated as |
+  | --- | --- |
+  | `labels.base.yml` | **remote URL** — wrong |
+  | `labels-base.yml` | **remote URL** — wrong |
+  | `.github/labels.yml` | local file — correct |
+  | `./labels.base.yml` | local file — correct |
+  | `config/labels.base.yml` | local file — correct |
+
+  A `/` or a leading `.` anywhere before the first dot defeats the domain
+  match, which is why the existing `.github/labels.yml` entries work. Keep the
+  `.github/` prefix on every local entry and this never bites.
+
+Keep `delete-other-labels: false`. Flipping it to `true` deletes every live
+label a repo's config does not list, and a deleted label is removed from every
+issue and PR that carried it.
+
+### What the base contains, and why
+
+Eight axes of labels. A name is in the base when **automation depends on its
+exact string in three or more repositories**, or when it is **already adopted
+across a clear majority of the org's repositories** — with a narrow allowance
+for a less widely adopted name that completes an axis already carried.
+Namespaced names (`area:*`, `pkg:*`, `crate:*`, `service:*`, `pipeline:*`,
+`lib:*`, `tool:*`) and aliases for a concept the base already names once
+(`deps`, `chore`) stay in the repo's own `labels.yml` whatever their count.
+
+The file's own header states the rule, the per-axis evidence, and the four
+names that sit just under the three-repo bar so the exclusion is arguable
+rather than silent. It carries no adoption counts on purpose: they go stale
+within hours. It carries instead the command that lists every label in every
+repo, so you can check the rule against the live state at the time you read
+it. The population is every repository this org owns, public and not, minus
+the temporary forks the security-advisory workflow creates.
+
+#### What adoption costs and changes
+
+Adopting the base means **removing** from a repo's `labels.yml` every name the
+base also declares, or the concatenation bug above fires. That is the cost,
+and it is per-repo work.
+
+Adoption is not a no-op on live labels. Every name in the base is already live
+somewhere in the org, so the base **introduces no new name** — but in a repo
+that does not carry a given name yet it creates the label, and where a name is
+already live under a different colour it **recolours** it.
+
+The recolours are the intended effect. Same name, same meaning, different
+colour per repo is unmanaged drift, and normalising it is name-safe — no
+automation reads a colour.
 
 See [`docs/standards/02-languages.md`](../docs/standards/02-languages.md) for the
 per-language rules these encode, and the [standards index](../docs/standards/)

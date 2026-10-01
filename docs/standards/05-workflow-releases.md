@@ -156,6 +156,76 @@ the non-public enumeration, so when it does not answer the summary states that
 the non-public count is corroborated by nothing on that run, instead of
 claiming a check that never ran.
 
+### When the counts disagree
+
+Declared and enumerated are compared in **both** directions, because the two
+disagreements mean opposite things.
+
+| shape | meaning | outcome |
+| --- | --- | --- |
+| enumerated **<** declared | repositories the org declares were not seen | **hard error** — INCOMPLETE, exit non-zero, no conformance conclusion drawn |
+| enumerated **>** declared | repositories were seen that the declared counter does not count | **reported** — the run is not failed, and the summary states the excess as an excess |
+
+Over-enumeration keeps the **VERIFIED** mode, deliberately. `VERIFIED` claims
+one thing — no repository the org *declares* escaped the enumeration — and an
+enumeration larger than the declared count is a *stronger* position for that
+claim than an exact match, not a weaker one. Calling it `UNVERIFIED` would
+spell a stronger position with the weaker word, and it would throw away the
+only mode in which a real shortfall is detectable at all: the sweep would go
+blind to genuine under-enumeration for as long as the excess persisted. So the
+mode stands and the *sentence* changes — the summary never says the two
+figures agree when they do not.
+
+The non-public counts can legitimately differ, and not just transiently. The
+leading explanation is that `total_private_repos` **does not count GitHub
+security-advisory temporary forks**, while `/orgs/{org}/repos` lists them —
+which would make a non-public excess equal to the number of open advisory
+drafts an expected steady state rather than something to chase, clearing when
+the advisory is published or withdrawn.
+
+**That is a hypothesis, not an established mechanism, and this document does
+not have the evidence to call it more.** What has been measured against this
+org is that the non-public excess and the advisory-fork name-shape count agree
+in size, and that `owned_private_repos` in the same org object matches the
+enumeration — so whatever is being left out is left out by
+`total_private_repos` specifically, not by the org object as a whole. The
+figures themselves are deliberately not written down here: they move, they go
+stale, and the size of the candidate is non-public in its own right. The
+current state is what a run of `org-conformance-sweep.yml` renders.
+
+What that does *not* establish. It is one org at one moment, and agreement in
+magnitude cannot distinguish "the counter omits this repository" from "the
+counter omits some other repository while counting the advisory fork".
+GitHub's REST reference for `GET /orgs/{org}` lists both
+`total_private_repos` and `owned_private_repos` as bare integers with **no
+description at all**, so there is no authoritative statement either way
+(checked 2026-09-30); if one is later found, it belongs here. A public feature
+request reports advisory forks being absent from repository *listings*, which
+is the opposite of what is measured here — so the behaviour is not uniform
+across organisations or over time, and a sweep that treated the exclusion as a
+law would be wrong somewhere else.
+
+The sweep therefore compares the excess against that candidate by
+repository-name shape and reports whether the two **match in size**. A match
+is an explanation offered, never a clearance granted; an excess that does
+*not* match is worth investigating, because something else is then being left
+out of the count that the completeness arithmetic rests on.
+
+Only *whether* the two agree in size is ever printed — never the size itself,
+which would disclose how many advisories the org has in draft. An advisory
+fork's name embeds its GHSA id, and this repository is public, so the job
+summary, the annotations and the step log would all carry whatever is printed.
+
+The public side is handled the same way, and has no known exclusion:
+`public_repos` counts archived public repositories and the enumeration is
+taken over `type=all`, so the two are meant to agree. An excess there renders
+as **unexplained**.
+
+Counting has a limit in both directions, stated in the summary rather than
+left implied: equal counts show the absence of a *shortfall*, not that the two
+sets are identical. A run that missed one declared repository and saw one the
+counter excludes lands on `enumerated == declared`.
+
 Run health asks two independent questions, and only one of them involves
 cadence:
 

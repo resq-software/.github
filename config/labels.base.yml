@@ -1,0 +1,289 @@
+# Canonical ResQ label base — the shared floor every repo's labels carry.
+#
+# Adopt by REFERENCE, not copy: list this file's raw URL as the first
+# `config-file` entry in .github/workflows/label-sync.yml, above the repo's own
+# .github/labels.yml. Setup, constraints and the two footguns that bite are in
+# config/README.md, section "Issue labels (label-sync)".
+#
+# ---------------------------------------------------------------------------
+# Inclusion rule
+# ---------------------------------------------------------------------------
+# A name belongs here when it passes (1) or (2), subject to (3):
+#
+#   (1) AUTOMATION depends on the exact string in THREE OR MORE repositories —
+#       hard-coded in a workflow, .github/labeler.yml, gh-aw front-matter,
+#       Dependabot `labels:`, or a .github/release.yml category.
+#
+#   (2) CONVERGENT ADOPTION — the name is already live across a clear majority
+#       of the org's repositories. A less widely adopted name is admitted only
+#       to complete an axis already carried under (1) or (2), because a PARTIAL
+#       ladder is worse than none: a state, priority or size axis that stops
+#       halfway forces every repo to invent the missing rungs, and that is how
+#       the single-repo shadow taxonomy this file exists to stop accumulated.
+#       Three names enter this way: size/XL, C-Chore and C-Testing.
+#
+#   (3) ORG-WIDE QUALIFIER. Two families stay in the repo's own labels.yml
+#       however many repos use them:
+#         - NAMESPACED names — `area:*`, `pkg:*`, `crate:*`, `service:*`,
+#           `pipeline:*`, `lib:*`, `tool:*`. They name a path inside one repo.
+#         - ALIASES for a concept the base already names once: `deps`
+#           (duplicates `dependencies`) and `chore` (duplicates `C-Chore`).
+#           The base carries one name per concept. These should eventually be
+#           retired, not promoted.
+#
+# THE THRESHOLD IN (1) IS THREE, AND IT IS A DECISION, NOT AN ACCIDENT.
+# Two repos sharing a path convention is a coincidence; three is a convention.
+# Four names sit just under the bar and are named here so the exclusion is
+# visible and arguable rather than silent:
+#   ci           Dependabot `labels:` in one repo AND a gh-aw
+#                safe-outputs.create-issue label in another. It is NOT a
+#                Dependabot-only name; an earlier revision said so and was
+#                wrong. It is live in no repo (see the note at the foot).
+#   A-Examples   .github/labeler.yml path rule
+#   A-Release    .github/labeler.yml path rule
+#   A-Scripts    .github/labeler.yml path rule
+# A reviewer who prefers the lower bar should say so — those four names move in
+# without any other change to this file.
+#
+# Test (2) admits names with no automation attached anywhere. The whole S-*
+# family is one: it is kept as a complete ladder, and if the org retires S-*,
+# it is deleted here once instead of in every repo that declares it.
+#
+# Frequency of *declaration* is not on its own evidence of anything, and the
+# axes below are ordered by what applies them, not by how often they appear.
+#
+# ---------------------------------------------------------------------------
+# Check the rule against the live state rather than trusting a figure
+# ---------------------------------------------------------------------------
+# No adoption counts are written down here: they go stale within hours and
+# every re-derivation disagrees with the last. List the labels yourself. The
+# population is every repository this org owns, public and not, minus the
+# temporary forks the security-advisory workflow creates.
+#
+#   gh api '/orgs/<org>/repos?type=all&per_page=100' --paginate \
+#     --jq '.[].name' | grep -viE '<advisory-fork pattern>' \
+#     | while read -r r; do
+#         gh api "/repos/<org>/$r/labels?per_page=100" --paginate \
+#           --jq ".[] | [\"$r\", .name, .color] | @tsv"
+#       done
+#
+# Compare colours case-INSENSITIVELY. GitHub's API returns whatever case was
+# written, so 512BD4 and 512bd4 are the same colour; a case-sensitive compare
+# reports divergence that is not there.
+#
+# ---------------------------------------------------------------------------
+# Disjointness (load-bearing — read before editing)
+# ---------------------------------------------------------------------------
+# EndBug/label-sync does NOT merge configs by name. It CONCATENATES them: a
+# name appearing in both this file and a repo's own labels.yml is emitted
+# twice and applied by two concurrent, conflicting API calls under Promise.all.
+# There is no precedence and no last-one-wins. Per-repo files must stay
+# DISJOINT from this one; they hold additions only. Adopting the base means
+# DELETING from the repo's own .github/labels.yml every name declared below.
+# --- Change type (C-*) ---------------------------------------------------------
+# Applied from the conventional-commit title prefix by
+# .github/workflows/conventional-title-labeler.yml, which maps the same seven
+# names in every repo that runs it, and consumed as changelog categories by
+# .github/release.yml. C-Documentation, C-Chore and C-Testing are also
+# .github/labeler.yml path rules.
+# C-Breaking-Change is title-applied on the Conventional Commits `!` marker in
+# one repo; C-Security is applied by nothing anywhere. Both enter under
+# rule (2), completing the axis.
+- name: "C-Feature"
+  color: "a2eeef"
+  description: "New feature or request"
+- name: "C-Bug"
+  color: "d73a4a"
+  description: "Something isn't working"
+- name: "C-Performance"
+  color: "f9d0c4"
+  description: "Performance regression or optimization"
+- name: "C-Documentation"
+  color: "0075ca"
+  description: "Improvements or additions to documentation"
+- name: "C-Refactor"
+  color: "d4c5f9"
+  description: "Code refactoring with no behavior change"
+- name: "C-Testing"
+  color: "c2e0c6"
+  description: "Tests and test tooling"
+- name: "C-Chore"
+  color: "ededed"
+  description: "Deps, tooling, or config with no public API change"
+- name: "C-Breaking-Change"
+  color: "b60205"
+  description: "Breaking change to the API or behavior"
+- name: "C-Security"
+  color: "e4e669"
+  description: "Security vulnerability or hardening"
+
+# --- State (S-*) ---------------------------------------------------------------
+# Workflow state, applied by hand. Widely declared, but no automation reads
+# these anywhere — kept under rule (2) as a complete ladder. See the note
+# above.
+- name: "S-Needs-Triage"
+  color: "ededed"
+  description: "Needs initial assessment"
+- name: "S-In-Progress"
+  color: "1d76db"
+  description: "Actively being worked on"
+- name: "S-Needs-Review"
+  color: "fbca04"
+  description: "Ready for code review"
+- name: "S-Blocked"
+  color: "b60205"
+  description: "Blocked by external dependency or decision"
+- name: "S-Ready-To-Merge"
+  color: "0e8a16"
+  description: "Approved and ready to be merged"
+
+# --- Priority (P0-P3) ----------------------------------------------------------
+# All four enter under rule (2). Rule (1) does not carry them: P0 and P1 are
+# actions/stale `exempt-issue-labels`, but in too few repos to clear the bar.
+# An earlier revision implied a wider automation footprint than exists.
+- name: "P0: critical"
+  color: "b60205"
+  description: "Outage or data loss - drop everything"
+- name: "P1: high"
+  color: "d93f0b"
+  description: "Major impact - fix this sprint"
+- name: "P2: medium"
+  color: "fbca04"
+  description: "Moderate impact - fix soon"
+- name: "P3: low"
+  color: "0e8a16"
+  description: "Minor impact - fix when convenient"
+
+# --- Change size (size/*) ------------------------------------------------------
+# Applied by pascalgn/size-label-action. These six names are the action's
+# `defaultSizes` buckets (0/10/30/100/500/1000 changed lines), read from
+# index.js at 56b489b027932ec0cf60438a1a5f1a19c8fc71ff, and no repo passes a
+# `sizes` input, so exactly these six are reachable and all six are required.
+# Some repos reference the action by the mutable tag v0.5.7 rather than by
+# SHA. Worth fixing, separately from this file.
+- name: "size/XS"
+  color: "0e8a16"
+  description: "Extra-small change (under 10 lines)"
+- name: "size/S"
+  color: "56d364"
+  description: "Small change (10-29 lines)"
+- name: "size/M"
+  color: "fbca04"
+  description: "Medium change (30-99 lines)"
+- name: "size/L"
+  color: "d93f0b"
+  description: "Large change (100-499 lines)"
+- name: "size/XL"
+  color: "b60205"
+  description: "Extra-large change (500-999 lines)"
+- name: "size/XXL"
+  color: "5c0102"
+  description: "Massive change (1000+ lines) - consider splitting"
+
+# --- Area (A-*) ----------------------------------------------------------------
+# Path-derived, from .github/labeler.yml, which actions/labeler reads in most
+# repos. A-DevOps is a labeler rule and a release.yml category; A-Build is a
+# labeler rule. Every other A-* falls below the three-repo bar — A-Examples,
+# A-Release, A-Scripts, A-CI, A-Config, A-Docker, A-Effect, A-Ports, A-Protos,
+# A-Samples, A-Storybook, A-Templates, A-Vendor — and stays repo-local.
+- name: "A-DevOps"
+  color: "1d76db"
+  description: "CI/CD, workflows, actions, and git hooks"
+- name: "A-Build"
+  color: "5319e7"
+  description: "Build configuration and toolchain"
+
+# --- Dependency and release automation -----------------------------------------
+# dependencies is a Dependabot `labels:` entry, a release.yml category and a
+# labeler rule. github-actions is a Dependabot label. javascript is a
+# Dependabot label in too few repos to clear the rule (1) bar; it enters under
+# rule (2). ignore-for-release and skip-changelog are release.yml
+# `exclude.labels`.
+- name: "dependencies"
+  color: "0366d6"
+  description: "Automated dependency updates"
+- name: "github-actions"
+  color: "1f6feb"
+  description: "GitHub Actions dependency updates"
+- name: "javascript"
+  color: "f1e05a"
+  description: "JavaScript/TypeScript dependency updates"
+- name: "ignore-for-release"
+  color: "cfd3d7"
+  description: "Exclude this PR from generated release notes"
+- name: "skip-changelog"
+  color: "cfd3d7"
+  description: "Omit this PR from the changelog"
+
+# --- Lifecycle and triage ------------------------------------------------------
+# stale is applied by actions/stale; pinned and security are read by it as
+# exemptions in the same repos (security is additionally a gh-aw create-issue
+# label). needs-triage and refactor are hard-coded in the duplicate-code-
+# detector gh-aw front-matter. Where refactor is live it is usually grey ededed
+# with no description, because a bot minted it rather than a config declaring
+# it. agentic-workflows is the same story — live, grey and undescribed wherever
+# it appears, declared in no config. It enters under rule (2) and is the
+# clearest case of a bot-minted name.
+- name: "needs-triage"
+  color: "d876e3"
+  description: "Awaiting first maintainer review"
+- name: "refactor"
+  color: "d4c5f9"
+  description: "Refactoring opportunity raised by an agentic workflow"
+- name: "agentic-workflows"
+  color: "5319e7"
+  description: "Raised or maintained by an agentic workflow"
+- name: "stale"
+  color: "795548"
+  description: "No activity for 60 days - will close if it stays quiet"
+- name: "pinned"
+  color: "006b75"
+  description: "Exempt from the stale bot"
+- name: "security"
+  color: "b60205"
+  description: "Security-relevant; exempt from the stale bot"
+
+# --- GitHub defaults -----------------------------------------------------------
+# Created by GitHub on every new repository. They cannot be prevented and
+# delete-other-labels is false, so they are declared here to give them one
+# description rather than left to drift.
+- name: "bug"
+  color: "d73a4a"
+  description: "Something isn't working"
+- name: "documentation"
+  color: "0075ca"
+  description: "Improvements or additions to documentation"
+- name: "duplicate"
+  color: "cfd3d7"
+  description: "This issue or PR already exists"
+- name: "enhancement"
+  color: "a2eeef"
+  description: "New feature or request"
+- name: "good first issue"
+  color: "7057ff"
+  description: "Good for newcomers"
+- name: "help wanted"
+  color: "008672"
+  description: "Extra attention is needed"
+- name: "invalid"
+  color: "e4e669"
+  description: "This doesn't seem right"
+- name: "question"
+  color: "d876e3"
+  description: "Further information is requested"
+- name: "wontfix"
+  color: "ffffff"
+  description: "This will not be worked on"
+
+# ---------------------------------------------------------------------------
+# Known gap this file does NOT close
+# ---------------------------------------------------------------------------
+# Three names are referenced by automation and live in NO repository, so the
+# automation that names them mints a grey, undescribed label the first time it
+# fires: `ci` (Dependabot `labels:` in one repo, a gh-aw
+# safe-outputs.create-issue label in another), `automation` (gh-aw) and
+# `roadmap` (an actions/stale `exempt-issue-labels` entry — an exemption that
+# can therefore never match). Declaring them here would only paper over it. The
+# agentic triage workflows can still mint arbitrary names; `refactor` and
+# `agentic-workflows` above are the evidence. That wants fixing before
+# convergence, or the single-repo shadow taxonomy simply regrows.
