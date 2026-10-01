@@ -132,7 +132,7 @@ reports INCOMPLETE and exits non-zero, instead of rendering the repos it could
 see as a clean result. It needs a token that can read every repo to do that —
 the existing org secret `SYNC_TOKEN` granted to this repository, or an
 org-wide `ORG_READ_TOKEN`, fine-grained with Metadata, Contents and Actions
-read, plus organization Administration: Read for the strict non-public count
+read, plus organization Administration: Read — the set as a whole, with no member shown to be the one that does the work
 (see the permission table below).
 
 Such a token is now configured, and the sentence that stood here — "until one
@@ -169,7 +169,7 @@ summary names the mode on every run for exactly this reason.
 
 Completeness is asserted in one of two modes, and the summary says which one
 ran. The org's `public_repos` field is public, so the public side is always
-checked strictly against it. The non-public side depends on
+checked against it as a floor, not strictly: short of the declared count is an error, level with or above it is not. The non-public side depends on
 `total_private_repos`, which sits in the owner-only block of the org object
 alongside `plan` and `disk_usage`.
 
@@ -278,11 +278,14 @@ drafts an expected steady state rather than something to chase, clearing when
 the advisory is published or withdrawn.
 
 **That is a hypothesis, not an established mechanism, and this document does
-not have the evidence to call it more.** What has been measured against this
-org is that the non-public excess and the advisory-fork name-shape count agree
-in size, and that `owned_private_repos` in the same org object matches the
-enumeration — so whatever is being left out is left out by
-`total_private_repos` specifically, not by the org object as a whole. The
+not have the evidence to call it more.** What was observed against this
+org, on 2026-09-30, was a difference of this shape alongside the candidate, with
+`owned_private_repos` in the same org object matching the enumeration — which
+pointed at `total_private_repos` specifically rather than the org object as a
+whole. Re-measured 2026-10-01, the two figures agree and the candidate is
+absent: the difference cleared exactly as the hypothesis predicts it should
+when an advisory stops being in draft. That is a second observation consistent
+with the explanation, and still not proof of it. The
 figures themselves are deliberately not written down here: they move, they go
 stale, and the size of the candidate is non-public in its own right. The
 current state is what a run of `org-conformance-sweep.yml` renders.
@@ -300,12 +303,11 @@ across organisations or over time, and a sweep that treated the exclusion as a
 law would be wrong somewhere else.
 
 The sweep does **not** test that explanation at runtime, and the reason is
-disclosure rather than difficulty. `enum_priv` and `dec_priv` are both
-published in the summary by design — the two-tier split withholds repository
-*names*, not counts — so the excess is derivable from what is already printed.
-A verdict on whether the candidate accounts for that excess would therefore
-pin down how many security-advisory temporary forks exist, which is how many
-advisories the organisation has in draft. An advisory fork's name embeds its
+disclosure rather than difficulty. Reporting whether the candidate accounts for
+a difference would narrow something non-public, so the comparison is left to an
+operator who can already see the underlying data. This document deliberately
+does not set out the derivation it is avoiding: writing down how the figure
+could be reconstructed would publish it as surely as printing it. An advisory fork's name embeds its
 GHSA id, this repository is public, and the job summary, the annotations and
 the step log are all world-readable, so there is nowhere for such a verdict to
 go. The name-shape comparison an earlier revision computed was removed
