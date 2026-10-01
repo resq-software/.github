@@ -200,10 +200,17 @@ jobs:
       - name: Autobuild
         uses: github/codeql-action/autobuild@1c5b675653bb5c22dbe9b12b556ec555138e09fd  # v4.38.1
       - name: Analyze
+        # Deliberately NOT continue-on-error. This step used to carry
+        # `continue-on-error: true` so the default-setup collision would not
+        # fail the job -- which turned "Analysis upload status is failed. /
+        # CodeQL job status was configuration error." into a permanent green
+        # check. Callers whose repositories have default setup enabled now omit
+        # `languages` instead of uploading an analysis that is discarded, so
+        # every failure left here is a real one -- extraction faults, autobuild
+        # breakage, a rejected SARIF -- and a real one must fail the job.
         uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd  # v4.38.1
         with:
           category: "/language:${{ matrix.language }}"
-        continue-on-error: true   # default-setup collision otherwise fails
 
   # ── Gitleaks ──────────────────────────────────────────────────────────────
   # The MIT gitleaks CLI, pinned by version and checksum — deliberately NOT
