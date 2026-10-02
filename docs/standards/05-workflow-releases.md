@@ -183,8 +183,7 @@ been built and run. Every row below is a reading of `/orgs/{org}`
 
 | token | permissions | `total_private_repos` | measured |
 | --- | --- | --- | --- |
-| a user who is not a member of the org | classic `repo`, `read:org` | absent | 2026-09-29 |
-| a user who is not a member of the org | classic `repo`, `read:org` | absent | 2026-09-29 |
+| two users who are not members of the org | classic `repo`, `read:org` | absent (both) | 2026-09-29 |
 | a user who is an org **owner** | classic `repo`, `read:org` | present | 2026-09-29 |
 | a user who is an org **owner** | classic `admin:org`, `repo`, … | present | 2026-09-29 |
 | fine-grained PAT, **all** repositories | repository Actions + Contents + Metadata: Read, **plus organization Administration: Read** | **present** | 2026-09-30 |
