@@ -922,7 +922,7 @@ jobs:
                 echo "\`enumerated\` exceeds \`declared\` above. That is **not** the failure that stopped this run: an excess means repositories were seen that the declared counter leaves out, never that a declared one was missed — the error annotation on this job names the check that did fail."
                 if [ "$excess_priv" -gt 0 ]; then
                   echo
-                  echo "**Non-public side, +$excess_priv.** The leading explanation is that \`total_private_repos\` does not count GitHub **security-advisory temporary forks**, which \`/orgs/{org}/repos\` does list — a hypothesis that fits the measurements taken here, not a documented behaviour. Whether the excess reconciles against that explanation is checked, but the result is not published here: the number of security advisories an organisation currently has in draft is itself non-public, independently of the repository names involved. See the job log for the operator-facing detail."
+                  echo "**Non-public side, +$excess_priv.** The leading explanation is that \`total_private_repos\` does not count GitHub **security-advisory temporary forks**, which \`/orgs/{org}/repos\` does list — a hypothesis that fits the measurements taken here, not a documented behaviour. This run does not test that explanation. Reconciling the excess against advisory-fork candidates is left to an operator, outside the run and against data this job deliberately does not gather: how many advisories an organisation currently has in draft is non-public in its own right, independently of the repository names involved."
                 fi
                 if [ "$excess_pub" -gt 0 ]; then
                   echo
