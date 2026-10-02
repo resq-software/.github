@@ -194,11 +194,11 @@ jobs:
         with:
           submodules: ${{ inputs.submodules }}
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@1c5b675653bb5c22dbe9b12b556ec555138e09fd  # v4.38.1
+        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
         with:
           languages: ${{ matrix.language }}
       - name: Autobuild
-        uses: github/codeql-action/autobuild@1c5b675653bb5c22dbe9b12b556ec555138e09fd  # v4.38.1
+        uses: github/codeql-action/autobuild@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
       - name: Analyze
         # Deliberately NOT continue-on-error. This step used to carry
         # `continue-on-error: true` so the default-setup collision would not
@@ -208,7 +208,7 @@ jobs:
         # `languages` instead of uploading an analysis that is discarded, so
         # every failure left here is a real one -- extraction faults, autobuild
         # breakage, a rejected SARIF -- and a real one must fail the job.
-        uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd  # v4.38.1
+        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
         with:
           category: "/language:${{ matrix.language }}"
 
@@ -356,7 +356,7 @@ jobs:
         # Security. On private repos without GHAS it 403s — don't fail the job
         # over it (the scan still ran; findings are in the step log/artifact).
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd  # v4.38.1
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
         with:
           sarif_file: zizmor.sarif
           category: zizmor
@@ -418,7 +418,7 @@ jobs:
         if: always() && hashFiles('snyk.sarif') != ''
         # Best-effort upload (GHAS-only); don't fail the job on no-GHAS repos.
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd  # v4.38.1
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
         with:
           sarif_file: snyk.sarif
           category: snyk
