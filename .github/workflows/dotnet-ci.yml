@@ -1,4 +1,4 @@
-# Copyright 2026 ResQ Software
+# Copyright 2026 ResQ Systems, Inc.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Reusable .NET CI — restore, build, test, format check. Callable from

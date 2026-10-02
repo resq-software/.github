@@ -66,4 +66,4 @@ The template auto-populates with:
 
 ## License
 
-Copyright 2026 ResQ. Licensed under the [Apache License, Version 2.0](./LICENSE).
+Copyright 2026 ResQ Systems, Inc. Licensed under the [Apache License, Version 2.0](./LICENSE).
