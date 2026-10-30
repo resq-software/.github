@@ -70,11 +70,11 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # stable
         with:
           toolchain: ${{ inputs.toolchain }}
           components: rustfmt
@@ -90,15 +90,15 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # stable
         with:
           toolchain: ${{ inputs.toolchain }}
           components: ${{ inputs.components }}
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
         with:
           # Registry-only: cache the downloaded ~/.cargo crates, NOT compiled
           # target/ artifacts. Removes the two real risks of build-artifact
@@ -131,15 +131,15 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # stable
         with:
           toolchain: ${{ inputs.toolchain }}
           components: ${{ inputs.components }}
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
         with:
           # Registry-only: cache the downloaded ~/.cargo crates, NOT compiled
           # target/ artifacts. Removes the two real risks of build-artifact
@@ -163,7 +163,7 @@ jobs:
           # shellcheck disable=SC2086
           cargo test $FLAGS
       - if: ${{ inputs.run-coverage }}
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0  # v2.87.22
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037  # v2.87.32
         with:
           tool: cargo-llvm-cov
       - if: ${{ inputs.run-coverage }}
@@ -184,7 +184,7 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -193,10 +193,10 @@ jobs:
       # based EmbarkStudios/cargo-deny-action did not respect
       # rust-toolchain.toml and failed with "override toolchain not
       # installed" when the consumer pinned a non-default target.
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # stable
         with:
           toolchain: ${{ inputs.toolchain }}
-      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0  # v2.87.22
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037  # v2.87.32
         with:
           tool: cargo-deny
       - run: cargo deny --all-features check
