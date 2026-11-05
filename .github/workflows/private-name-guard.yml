@@ -120,6 +120,7 @@ jobs:
           STRICT: ${{ inputs.strict }}
           SCAN_PATH: ${{ inputs.scan-path }}
           IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+          EVENT_ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
 
@@ -135,6 +136,22 @@ jobs:
             exit 1
           fi
 
+          # A scan path that does not exist yields zero grep output, which is
+          # indistinguishable from a clean tree. Establish it exists first.
+          if [ ! -e "$SCAN_PATH" ]; then
+            echo "::error title=private-name-guard::scan-path does not exist, so no tree was read and nothing is known about this one."
+            exit 1
+          fi
+          
+          # Dependabot events cannot read Actions secrets -- only Dependabot
+          # secrets. Without this branch the failure below reads as a missing
+          # secret rather than as the wrong KIND of secret, which sends the
+          # reader to the wrong settings page.
+          if [ "${EVENT_ACTOR:-}" = "dependabot[bot]" ] && [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error title=private-name-guard::this is a Dependabot event, and Dependabot cannot read Actions secrets. Provision a Dependabot secret (organization or repository) also named ORG_READ_TOKEN with Metadata: Read. Until then a Dependabot pull request cannot be assessed, and an unassessed tree is not a clean tree."
+            exit 1
+          fi
+          
           if [ -z "${GH_TOKEN:-}" ]; then
             echo "::error title=private-name-guard::ORG_READ_TOKEN is not set, so the private-repo list would be empty and every tree would look clean. Add the secret (fine-grained, org-wide, Metadata: Read) and forward it to this workflow."
             exit 1
@@ -155,6 +172,30 @@ jobs:
             exit 1
           fi
 
+          # Non-emptiness is not completeness. A token scoped to SOME private
+          # repositories enumerates a short list, and every name missing from
+          # it is a name this guard never searches for -- while still reporting
+          # the tree as checked. Cross-check the count against a different
+          # endpoint that reports it independently, and refuse the run on any
+          # mismatch.
+          #
+          # Neither number is printed. The count of private repositories is
+          # non-public metadata on its own, independently of the names.
+          if ! expected=$(gh api "/orgs/$ORG" --jq '.owned_private_repos'); then
+            echo "::error title=private-name-guard::cannot read the organization record to confirm the private-repository enumeration is complete, so completeness is unknown and this tree was NOT assessed."
+            exit 1
+          fi
+          case "$expected" in
+            ""|null|*[!0-9]*)
+              echo "::error title=private-name-guard::the organization record reported no usable private-repository count, so enumeration completeness cannot be established and this tree was NOT assessed."
+              exit 1 ;;
+          esac
+          got=$(printf '%s\n' "$priv" | grep -c . || true)
+          if [ "$got" -ne "$expected" ]; then
+            echo "::error title=private-name-guard::the private-repository enumeration is incomplete -- fewer names came back than this organization is reported to own. Every missing name is one this guard would not search for, so this tree was NOT assessed. Widen ORG_READ_TOKEN to all repositories."
+            exit 1
+          fi
+          
           # ---- matcher ----------------------------------------------------
           # Repo names are limited to [A-Za-z0-9._-]; of those, `.` is the
           # only character that means anything in an ERE.
@@ -183,18 +224,54 @@ jobs:
             printf '%s' "(^|[^A-Za-z0-9_.-])${e}([^A-Za-z0-9_.-]|\$)"
           }
 
-          # Emit `path:line` per hit and NOTHING of the matched text. The sed
-          # drops everything after the line number, and is the only reason
-          # this output is safe to print in a world-readable log.
+          # Emit `path:line` per hit and NOTHING of the matched text.
+          #
+          # `-Z` terminates the filename with NUL instead of `:`, so a path that
+          # itself contains a colon cannot desynchronise the parse. The previous
+          # sed split on the first `:`; against a path such as
+          # `a:b/f.yml:12:<matched text>` it matched nothing and passed the line
+          # through UNCHANGED, printing the matched private name into a
+          # world-readable log. That is the one invariant this guard cannot lose,
+          # so the parse is delimiter-safe by construction now.
+          #
+          # grep exits 0 for a match, 1 for no match, and >= 2 for an ERROR.
+          # Previously `2>/dev/null` hid the error and the pipeline carried the
+          # exit status of `sed`, so a tree grep could not read produced empty
+          # output that was read as clean. An error now records a marker file, which
+          # is checked after the scan and fails the job.
           hits() { # <regex> <extra-grep-flags> <root>
+            st=0
+            # Output goes to a FILE, never through $( ). Command substitution
+            # strips NUL bytes -- bash warns "ignored null byte in input" -- which
+            # would destroy the -Z delimiter and silently drop every hit. The
+            # controls are what caught that; without them it would have reported
+            # every tree clean.
+            #
+            # -H forces the filename even when "$3" is a single file, and -Z
+            # terminates it with NUL, so a path containing a colon cannot
+            # desynchronise the parse below.
             # shellcheck disable=SC2086
-            grep -rInE $2 --exclude-dir=.git -e "$1" "$3" 2>/dev/null \
-              | sed 's/^\([^:]*:[0-9]*\):.*$/\1/' || true
+            grep -rHInEZ $2 --exclude-dir=.git -e "$1" "$3" \
+              > "$wk/raw" 2>>"$wk/grep.err" || st=$?
+            if [ "$st" -ge 2 ]; then
+              # A marker file, not a variable: hits() is called inside $( ) by the
+              # controls, and a variable assigned in a subshell is lost.
+              printf '%s\n' "$st" >> "$wk/grep.failed"
+              return 0
+            fi
+            [ -s "$wk/raw" ] || return 0
+            awk -F'\0' 'NF>1 { n=index($2,":"); if (n>1) print $1 ":" substr($2,1,n-1) }' \
+              "$wk/raw"
           }
+
 
           # ---- controls ---------------------------------------------------
           ctl=$(mktemp -d)
-          trap 'rm -rf "$ctl"' EXIT
+          # Scratch files must not live under $ctl: $ctl is the control
+          # fixture directory and is itself passed to hits() as a scan
+          # path, so anything written there would be scanned.
+          wk=$(mktemp -d)
+          trap 'rm -rf "$ctl" "$wk"' EXIT
           {
             echo "see $ORG/zzQualifiedCanary1 for details"
             echo '{ "repository_name": "zzManifestCanary2" }'
@@ -253,6 +330,16 @@ jobs:
 
           # Numeric on the line field: a plain sort puts :11 before :7, which
           # reads as a missing hit when a reviewer scans the table.
+          # A grep that errored means part of the tree was never searched, so
+          # neither a clean result nor a hit list describes it. Refuse both.
+          if [ -s "$wk/grep.failed" ]; then
+            echo "::error title=private-name-guard::the tree could not be fully read, so this tree was NOT assessed. A clean result is not being reported."
+            if [ -s "$wk/grep.err" ]; then
+              echo "grep reported $(grep -c . "$wk/grep.err" || true) error line(s); contents withheld because they carry paths and may carry matched text."
+            fi
+            exit 2
+          fi
+
           sort -u -t: -k1,1 -k2,2n "$ctl/findings" -o "$ctl/findings"
           n=$(grep -c . "$ctl/findings" || true)
           n=${n:-0}
@@ -271,7 +358,10 @@ jobs:
               echo
               echo "| file | line |"
               echo "| --- | --- |"
-              while IFS=: read -r f l; do
+              # Split on the LAST colon: the coordinate is `path:line`,
+              # and a path may itself contain a colon.
+              while IFS= read -r coord; do
+                f=${coord%:*}; l=${coord##*:}
                 echo "| \`${f#./}\` | $l |"
               done < "$ctl/findings"
             fi
@@ -290,7 +380,12 @@ jobs:
           fi
 
           if [ "${STRICT:-true}" = "true" ]; then lvl=error; else lvl=warning; fi
-          while IFS=: read -r f l; do
+          # Same last-colon split as the summary above. Splitting on the
+          # first colon produced `file=<path-prefix>,line=<rest-of-path>:N`
+          # for a path containing a colon -- no matched text leaked, but the
+          # coordinate was unusable, which defeats the point of reporting it.
+          while IFS= read -r coord; do
+            f=${coord%:*}; l=${coord##*:}
             echo "::$lvl file=${f#./},line=$l,title=private-name-guard::this line names a private repository"
           done < "$ctl/findings"
           echo "private-name-guard: $n location(s) name a private repository"
