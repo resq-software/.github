@@ -91,6 +91,17 @@ jq -r '.repos[] | @json' ops/properties-values.json | while read -r row; do
 done
 ```
 
+**Scope — public repositories only.** `properties-values.json` carries
+assignments for public repositories *only*, and the loop above is therefore
+partial by design. Assignments for non-public repositories are governed from a
+non-public location and must not be added to this directory: a repository name
+committed here discloses that repository to anyone reading this public repo, and
+`.github/workflows/private-name-guard.yml` fails the build when it finds one.
+
+A missing entry here is consequently not evidence of a missing assignment. If
+you are reconciling, reconcile against the org's own property values, not
+against the length of this file.
+
 ---
 
 ## 3. Ruleset A — default-branch baseline (`ops/ruleset-a-baseline.json`)
