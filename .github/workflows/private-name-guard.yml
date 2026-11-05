@@ -1,0 +1,392 @@
+# Copyright 2026 ResQ Systems, Inc.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Forward guard: fails when the name of a PRIVATE org repository appears in a
+# PUBLIC repository's tree.
+#
+# WHY THIS EXISTS
+# A 2026-11 audit of this repo found private repo names reachable from 477
+# history blobs, 7 merged PR diffs and 6 issue/PR comment records. None of it
+# was a credential and nothing needed rotating -- but almost none of it is
+# removable either: pull requests cannot be deleted, and a history rewrite
+# would break 21 SHA-pinned call sites across 11 repos to scrub text that is
+# already mirrored off GitHub. The measured conclusion was that this leak is
+# cheap to PREVENT and expensive-to-impossible to REVERSE. This is the
+# prevention half, and it is the only half with lasting value.
+#
+# WHAT IT DOES NOT DO
+# It guards HEAD, at the moment a pull request proposes it. It does not scan
+# git history, pull-request diffs or comment bodies. Content already merged is
+# out of scope by construction -- see above for why that is a deliberate
+# boundary and not an oversight. org-conformance-sweep.yml is the right home
+# for a periodic already-merged sweep; this file is the gate.
+#
+# DISCLOSURE: the consumer may be PUBLIC, so the job summary, every annotation
+# and every line of step log is world-readable. Following the two-tier rule in
+# org-conformance-sweep.yml, this job reports:
+#   * the PATH and LINE of each hit -- tier 1, because they point at text that
+#     is ALREADY public in that file, so they disclose nothing new; and
+#   * nothing else.
+# The private repo name, the matched text, any hash of the name, and the
+# number of private repos in the org are all tier 2 and never reach a
+# printed variable. A hash would be a confirmation oracle for a guessed name,
+# and the private-repo count is non-public metadata independently of the
+# names. Resolve a finding by opening the reported path and line.
+#
+# TOKEN: needs the private-repo list, which GITHUB_TOKEN cannot see. Pass an
+# `ORG_READ_TOKEN` secret (fine-grained, org-wide, Metadata: Read) -- the same
+# secret org-conformance-sweep.yml uses. Without it the enumeration returns
+# zero names and EVERY tree looks clean, which is the exact false-assurance
+# mode this guard exists to prevent, so a zero enumeration FAILS LOUDLY and
+# never passes. For the same reason a pull request from a fork, which cannot
+# read secrets, fails as NOT ASSESSED rather than passing.
+#
+# MATCH TIERS
+#   qualified  Always checked, case-insensitive (GitHub resolves repo names
+#              case-insensitively). Forms that cannot occur in ordinary prose:
+#              `<org>/<name>`, `<name>.git`, `<name>@<40-hex>`, and
+#              `repository_name: <name>`.
+#   bare       Whole-word and CASE-SENSITIVE, and only for names that are not
+#              prose-shaped, where prose-shaped means "nothing but lowercase
+#              ASCII letters". That asymmetry is measured, not timid: the same
+#              audit's first pass reported six leaked repos where three
+#              existed, because two of the names are also the English words
+#              `research` and `scripts` -- and a case-insensitive bare pass
+#              matches the company name in all 30-odd copyright headers. A
+#              name that cannot be bare-matched safely is still fully covered
+#              by the qualified tier, and the summary says so when any name
+#              was withheld, so the gap is visible rather than silent.
+#
+# SELF-TEST: a matcher that silently stops matching reports a clean tree, so
+# the real scan is gated on six controls -- three positive (qualified slug,
+# manifest form, bare whole-word), one proving the bare matcher does fire on
+# a prose-shaped token, and two asserting the prose-shape classifier sorts
+# lowercase and mixed-case tokens correctly. Any control failure exits 2
+# without reporting a result.
+#
+# LOCAL USE: the script body defaults SCAN_PATH and GITHUB_STEP_SUMMARY, so
+# the same logic runs unchanged outside Actions against a checkout. That is
+# how a reported path and line is resolved back to which repository it names.
+
+name: private-name-guard
+
+on:
+  workflow_call:
+    inputs:
+      strict:
+        description: >
+          Fail the job on any hit. Defaults true, unlike the org's usual
+          audit-then-enforce rollout: a qualified-tier hit is a true positive
+          by construction, so warning only would be a louder log and nothing
+          more.
+        type: boolean
+        required: false
+        default: true
+      scan-path:
+        description: Directory to scan, relative to the checkout root.
+        type: string
+        required: false
+        default: "."
+    secrets:
+      ORG_READ_TOKEN:
+        description: "Fine-grained org-wide token, Metadata: Read. Required in practice."
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: private-name-guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Guard against private repository names
+        env:
+          # Inputs that reach `run:` are forwarded through env and referenced
+          # as "$VAR", never interpolated at template time.
+          GH_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+          ORG: ${{ github.repository_owner }}
+          STRICT: ${{ inputs.strict }}
+          SCAN_PATH: ${{ inputs.scan-path }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+          EVENT_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+
+          : "${SCAN_PATH:=.}"
+          : "${GITHUB_STEP_SUMMARY:=/dev/stdout}"
+
+          # ---- preconditions ---------------------------------------------
+          # Every branch below fails. None of them can pass, because each one
+          # means the private-repo list is unavailable, and an empty list
+          # makes every tree look clean.
+          if [ "${IS_FORK:-false}" = "true" ]; then
+            echo "::error title=private-name-guard::fork pull requests cannot read ORG_READ_TOKEN, so the private-repo list is unavailable and this tree was NOT ASSESSED. Re-run from a branch in this repository."
+            exit 1
+          fi
+
+          # A scan path that does not exist yields zero grep output, which is
+          # indistinguishable from a clean tree. Establish it exists first.
+          if [ ! -e "$SCAN_PATH" ]; then
+            echo "::error title=private-name-guard::scan-path does not exist, so no tree was read and nothing is known about this one."
+            exit 1
+          fi
+          
+          # Dependabot events cannot read Actions secrets -- only Dependabot
+          # secrets. Without this branch the failure below reads as a missing
+          # secret rather than as the wrong KIND of secret, which sends the
+          # reader to the wrong settings page.
+          if [ "${EVENT_ACTOR:-}" = "dependabot[bot]" ] && [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error title=private-name-guard::this is a Dependabot event, and Dependabot cannot read Actions secrets. Provision a Dependabot secret (organization or repository) also named ORG_READ_TOKEN with Metadata: Read. Until then a Dependabot pull request cannot be assessed, and an unassessed tree is not a clean tree."
+            exit 1
+          fi
+          
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error title=private-name-guard::ORG_READ_TOKEN is not set, so the private-repo list would be empty and every tree would look clean. Add the secret (fine-grained, org-wide, Metadata: Read) and forward it to this workflow."
+            exit 1
+          fi
+
+          if ! priv_raw=$(gh api "/orgs/$ORG/repos?per_page=100&type=private" \
+                            --paginate --jq '.[].name'); then
+            echo "::error title=private-name-guard::cannot enumerate private repositories of $ORG. The token is present but the call failed, so nothing is known about this tree."
+            exit 1
+          fi
+
+          # Drop anything that is not a well-formed repo name. A malformed
+          # line would build a malformed regex, and grep would then fail open
+          # on that one name while the rest still reported as checked.
+          priv=$(printf '%s\n' "$priv_raw" | grep -xE '[A-Za-z0-9._-]+' || true)
+          if [ -z "$priv" ]; then
+            echo "::error title=private-name-guard::enumerated zero private repositories. That is either a token without Metadata: Read or an org that genuinely has none, and this job refuses to tell those two apart silently."
+            exit 1
+          fi
+
+          # Non-emptiness is not completeness. A token scoped to SOME private
+          # repositories enumerates a short list, and every name missing from
+          # it is a name this guard never searches for -- while still reporting
+          # the tree as checked. Cross-check the count against a different
+          # endpoint that reports it independently, and refuse the run on any
+          # mismatch.
+          #
+          # Neither number is printed. The count of private repositories is
+          # non-public metadata on its own, independently of the names.
+          if ! expected=$(gh api "/orgs/$ORG" --jq '.owned_private_repos'); then
+            echo "::error title=private-name-guard::cannot read the organization record to confirm the private-repository enumeration is complete, so completeness is unknown and this tree was NOT assessed."
+            exit 1
+          fi
+          case "$expected" in
+            ""|null|*[!0-9]*)
+              echo "::error title=private-name-guard::the organization record reported no usable private-repository count, so enumeration completeness cannot be established and this tree was NOT assessed."
+              exit 1 ;;
+          esac
+          got=$(printf '%s\n' "$priv" | grep -c . || true)
+          if [ "$got" -ne "$expected" ]; then
+            echo "::error title=private-name-guard::the private-repository enumeration is incomplete -- fewer names came back than this organization is reported to own. Every missing name is one this guard would not search for, so this tree was NOT assessed. Widen ORG_READ_TOKEN to all repositories."
+            exit 1
+          fi
+          
+          # ---- matcher ----------------------------------------------------
+          # Repo names are limited to [A-Za-z0-9._-]; of those, `.` is the
+          # only character that means anything in an ERE.
+          ere() { printf '%s' "$1" | sed 's/\./\\./g'; }
+          ORG_E=$(ere "$ORG")
+
+          # True when the name cannot be told apart from an English word.
+          prose_shaped() {
+            case "$1" in
+              *[!a-z]*) return 1 ;;
+              *)        return 0 ;;
+            esac
+          }
+
+          qualified_re() {
+            e=$(ere "$1")
+            printf '%s' \
+              "(^|[^A-Za-z0-9_.-])${ORG_E}/${e}([^A-Za-z0-9_.-]|\$)" \
+              "|(^|[^A-Za-z0-9_.-])${e}\\.git([^A-Za-z0-9_.-]|\$)" \
+              "|(^|[^A-Za-z0-9_.-])${e}@[0-9a-fA-F]{40}" \
+              "|repository_name\"?[[:space:]]*:[[:space:]]*\"?${e}([^A-Za-z0-9_.-]|\$)"
+          }
+
+          bare_re() {
+            e=$(ere "$1")
+            printf '%s' "(^|[^A-Za-z0-9_.-])${e}([^A-Za-z0-9_.-]|\$)"
+          }
+
+          # Emit `path:line` per hit and NOTHING of the matched text.
+          #
+          # `-Z` terminates the filename with NUL instead of `:`, so a path that
+          # itself contains a colon cannot desynchronise the parse. The previous
+          # sed split on the first `:`; against a path such as
+          # `a:b/f.yml:12:<matched text>` it matched nothing and passed the line
+          # through UNCHANGED, printing the matched private name into a
+          # world-readable log. That is the one invariant this guard cannot lose,
+          # so the parse is delimiter-safe by construction now.
+          #
+          # grep exits 0 for a match, 1 for no match, and >= 2 for an ERROR.
+          # Previously `2>/dev/null` hid the error and the pipeline carried the
+          # exit status of `sed`, so a tree grep could not read produced empty
+          # output that was read as clean. An error now records a marker file, which
+          # is checked after the scan and fails the job.
+          hits() { # <regex> <extra-grep-flags> <root>
+            st=0
+            # Output goes to a FILE, never through $( ). Command substitution
+            # strips NUL bytes -- bash warns "ignored null byte in input" -- which
+            # would destroy the -Z delimiter and silently drop every hit. The
+            # controls are what caught that; without them it would have reported
+            # every tree clean.
+            #
+            # -H forces the filename even when "$3" is a single file, and -Z
+            # terminates it with NUL, so a path containing a colon cannot
+            # desynchronise the parse below.
+            # shellcheck disable=SC2086
+            grep -rHInEZ $2 --exclude-dir=.git -e "$1" "$3" \
+              > "$wk/raw" 2>>"$wk/grep.err" || st=$?
+            if [ "$st" -ge 2 ]; then
+              # A marker file, not a variable: hits() is called inside $( ) by the
+              # controls, and a variable assigned in a subshell is lost.
+              printf '%s\n' "$st" >> "$wk/grep.failed"
+              return 0
+            fi
+            [ -s "$wk/raw" ] || return 0
+            awk -F'\0' 'NF>1 { n=index($2,":"); if (n>1) print $1 ":" substr($2,1,n-1) }' \
+              "$wk/raw"
+          }
+
+
+          # ---- controls ---------------------------------------------------
+          ctl=$(mktemp -d)
+          # Scratch files must not live under $ctl: $ctl is the control
+          # fixture directory and is itself passed to hits() as a scan
+          # path, so anything written there would be scanned.
+          wk=$(mktemp -d)
+          trap 'rm -rf "$ctl" "$wk"' EXIT
+          {
+            echo "see $ORG/zzQualifiedCanary1 for details"
+            echo '{ "repository_name": "zzManifestCanary2" }'
+            echo "a bare mention of zzBareCanary3 here"
+            echo "a bare mention of canaryproseonly here"
+          } > "$ctl/fixture.txt"
+
+          ctl_fail=0
+          expect_hit() { # <label> <count>
+            if [ "${2:-0}" -lt 1 ]; then
+              echo "::error title=private-name-guard::control failed -- $1"
+              ctl_fail=1
+            fi
+          }
+
+          expect_hit "qualified <org>/<name> form" \
+            "$(hits "$(qualified_re zzQualifiedCanary1)" -i "$ctl" | wc -l)"
+          expect_hit "qualified repository_name manifest form" \
+            "$(hits "$(qualified_re zzManifestCanary2)" -i "$ctl" | wc -l)"
+          expect_hit "bare whole-word form" \
+            "$(hits "$(bare_re zzBareCanary3)" "" "$ctl" | wc -l)"
+          # The bare matcher must fire on a prose-shaped token too. Such names
+          # are withheld from it by policy, not because the matcher is blind,
+          # and only a control can tell those two apart.
+          expect_hit "bare matcher on a prose-shaped token" \
+            "$(hits "$(bare_re canaryproseonly)" "" "$ctl" | wc -l)"
+
+          if ! prose_shaped canaryproseonly; then
+            echo "::error title=private-name-guard::control failed -- prose-shape test did not classify an all-lowercase token as prose-shaped"
+            ctl_fail=1
+          fi
+          if prose_shaped zzBareCanary3; then
+            echo "::error title=private-name-guard::control failed -- prose-shape test wrongly classified a mixed-case token as prose-shaped"
+            ctl_fail=1
+          fi
+
+          if [ "$ctl_fail" -ne 0 ]; then
+            echo "::error title=private-name-guard::matcher self-test failed, so this tree was NOT assessed. A clean result is not being reported."
+            exit 2
+          fi
+
+          # ---- scan -------------------------------------------------------
+          printf '%s\n' "$priv" > "$ctl/names"
+          : > "$ctl/findings"
+          bare_withheld=no
+
+          while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            hits "$(qualified_re "$name")" -i "$SCAN_PATH" >> "$ctl/findings"
+            if prose_shaped "$name"; then
+              bare_withheld=yes
+            else
+              hits "$(bare_re "$name")" "" "$SCAN_PATH" >> "$ctl/findings"
+            fi
+          done < "$ctl/names"
+
+          # Numeric on the line field: a plain sort puts :11 before :7, which
+          # reads as a missing hit when a reviewer scans the table.
+          # A grep that errored means part of the tree was never searched, so
+          # neither a clean result nor a hit list describes it. Refuse both.
+          if [ -s "$wk/grep.failed" ]; then
+            echo "::error title=private-name-guard::the tree could not be fully read, so this tree was NOT assessed. A clean result is not being reported."
+            if [ -s "$wk/grep.err" ]; then
+              echo "grep reported $(grep -c . "$wk/grep.err" || true) error line(s); contents withheld because they carry paths and may carry matched text."
+            fi
+            exit 2
+          fi
+
+          sort -u -t: -k1,1 -k2,2n "$ctl/findings" -o "$ctl/findings"
+          n=$(grep -c . "$ctl/findings" || true)
+          n=${n:-0}
+
+          # ---- report -----------------------------------------------------
+          {
+            echo "## Private-name forward guard"
+            echo
+            if [ "$n" -eq 0 ]; then
+              echo "No private repository name appears in this tree."
+            else
+              echo "**$n** location(s) in this tree name a private repository."
+              echo
+              echo "Paths and lines only -- the name itself is not printed here, because"
+              echo "this log is world-readable. Open the path and line to see it."
+              echo
+              echo "| file | line |"
+              echo "| --- | --- |"
+              # Split on the LAST colon: the coordinate is `path:line`,
+              # and a path may itself contain a colon.
+              while IFS= read -r coord; do
+                f=${coord%:*}; l=${coord##*:}
+                echo "| \`${f#./}\` | $l |"
+              done < "$ctl/findings"
+            fi
+            if [ "$bare_withheld" = yes ]; then
+              echo
+              echo "> Some private repository names are made only of lowercase letters and"
+              echo "> cannot be told apart from ordinary English words, so they were checked"
+              echo "> in qualified forms only. A bare mention of such a name in prose would"
+              echo "> not be caught by this guard."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$n" -eq 0 ]; then
+            echo "private-name-guard: clean"
+            exit 0
+          fi
+
+          if [ "${STRICT:-true}" = "true" ]; then lvl=error; else lvl=warning; fi
+          # Same last-colon split as the summary above. Splitting on the
+          # first colon produced `file=<path-prefix>,line=<rest-of-path>:N`
+          # for a path containing a colon -- no matched text leaked, but the
+          # coordinate was unusable, which defeats the point of reporting it.
+          while IFS= read -r coord; do
+            f=${coord%:*}; l=${coord##*:}
+            echo "::$lvl file=${f#./},line=$l,title=private-name-guard::this line names a private repository"
+          done < "$ctl/findings"
+          echo "private-name-guard: $n location(s) name a private repository"
+          [ "$lvl" = warning ] || exit 1
