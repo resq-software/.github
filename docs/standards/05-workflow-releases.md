@@ -39,12 +39,18 @@ clean bill of health it had not earned. Nothing above depends on a count, and
    workflows as an interface: `MAJOR` for a breaking input change, `MINOR`
    for a new input or job, `PATCH` for a fix that changes no interface.
 
-   This is an obligation, not a description. It is **not yet true**: this repo
-   has no tags and no releases, and many commits have landed on `main` since
-   the oldest pin still in use. `06-versioning.md` — "a repo that publishes
-   nothing still tags" — makes this a rule this repo is itself breaking, and
-   it is why propagation is still manual. Clauses 2 and 3 cannot function
-   until it is honoured.
+   As of 2026-11-05 this repo carries its first tag, **v1.0.0**, on the
+   commit that added the private-name guard and corrected the pin examples.
+   `06-versioning.md` — "a repo that publishes nothing still tags" — is
+   therefore satisfied, and clauses 2 and 3 are now able to function:
+   there is a version for a pin comment to name.
+
+   Two things are still outstanding, and neither is a reason to treat the
+   clause as unmet. There is a tag but **no release page**, so the notes
+   describing the interface are in the tag's own message rather than on a
+   releases page. And propagation remains manual: no consumer has been
+   repinned yet, so the pins in other repositories still carry no version
+   comment — see clause 2.
 2. **Consumers pin by SHA with a trailing version comment**, the same
    convention this repo already applies to third-party actions:
 
@@ -77,21 +83,25 @@ clean bill of health it had not earned. Nothing above depends on a count, and
    PR for whatever releases are available at that point — propagation is
    systematic, and still reviewed.
 
-   **As written, this clause does not describe what currently happens here.**
-   It is not weakened to make it true: it is the standard, and the standard is
-   unmet. The ecosystem is enabled in most repositories in the org and it is
-   working — for third-party actions. It is *this* repo that supplies no
-   target: zero tags and zero releases, so every pin at
-   `resq-software/.github` is skipped and no PR is ever opened for it, while
-   third-party actions in the same file are bumped as normal. Dependabot
-   raises no error for this. What was observed is that **no Dependabot PR, in
-   any state, has ever named one of those pins**, while the same query returns
-   third-party bumps — so the symptom is not a red run and not an absent PR,
-   and enabling the ecosystem in the remaining repositories would not by
-   itself surface it. Nothing on the consumer side closes it. Honouring
-   clause 1 does, and only clause 1 does: the first tag and release cut here
-   gives clauses 2 and 3 something to name and something to bump to on the
-   same day.
+   **The cause of this clause's long-standing failure is now removed, but the
+   effect has not been observed yet.** The ecosystem is enabled in most
+   repositories in the org and has always worked — for third-party actions.
+   It was *this* repo that supplied no target: with zero tags, every pin at
+   `resq-software/.github` was skipped and no PR was ever opened for it,
+   while third-party actions in the same file were bumped as normal.
+   Dependabot raises no error for this. What was observed is that **no
+   Dependabot PR, in any state, had ever named one of those pins**, while the
+   same query returned third-party bumps — so the symptom was not a red run
+   and not an absent PR, and enabling the ecosystem in the remaining
+   repositories would not by itself have surfaced it.
+
+   v1.0.0 now exists, so there is a target. Treat this clause as met only
+   once a Dependabot PR has actually named one of these pins — a tag is a
+   necessary condition, not proof the mechanism runs. Two things have to
+   happen first, and neither is automatic: a consumer pin must carry a
+   version comment for Dependabot to compare against, and none currently
+   does (clause 2), and the scan is weekly. The same query that found
+   nothing before is how to check.
 
    Note what that does *not* promise. The scan is weekly and this repo's
    own config groups all Actions updates, so several releases inside one

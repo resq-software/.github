@@ -1008,9 +1008,12 @@ jobs:
           echo "sweep: required.yml siblings at main: $SIBLINGS"
 
           # Thresholds. The org contract says "more than one minor version
-          # behind is drift". With zero tags here that is unmeasurable, so the
-          # age of the pinned commit is the honest proxy — and only when the
-          # effective surface actually changed.
+          # behind is drift". That became measurable in principle when v1.0.0
+          # was cut, but it is not measured here: with a single tag there is no
+          # minor-version distance to compute, and consumer pins carry no
+          # version comment to compare against. The age of the pinned commit
+          # stays the honest proxy — and only when the effective surface
+          # actually changed. Revisit once a second tag exists.
           PIN_WARN_DAYS=30   # four weekly Dependabot intervals: a missed cycle
           PIN_FAIL_DAYS=90   # a full quarter
           NOW=$(date -u +%s)

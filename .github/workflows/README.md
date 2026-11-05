@@ -9,13 +9,18 @@ and the comment is what lets Dependabot find the next version:
 uses: resq-software/.github/.github/workflows/<name>.yml@<sha>  # v<version>
 ```
 
-This repository carries no release tags yet, so there is at present no
-version a reader could name in that comment. Until one exists, pin the SHA
-and leave the comment off rather than inventing a version — a comment that
-names a tag which does not exist is worse than none, because Dependabot
-resolves it to nothing and the pin silently stops being updatable.
-`docs/standards/05-workflow-releases.md` clause 1 records the missing tags
-as a rule this repository is itself breaking.
+The current version is **v1.0.0**, which tags commit `20ae467d59f14dc9157704ad4e9e473092dd589a`.
+So a pin on today's interface reads:
+
+```yaml
+uses: resq-software/.github/.github/workflows/required.yml@20ae467d59f14dc9157704ad4e9e473092dd589a  # v1.0.0
+```
+
+Semver here describes the workflows as an interface: `MAJOR` for a breaking
+input change, `MINOR` for a new input or job, `PATCH` for a fix that changes
+no interface. Bump the SHA and the comment together — a comment naming a tag
+that does not point at the pinned SHA is worse than no comment, because
+Dependabot resolves it to the wrong thing.
 
 `@main` is not a pin. It is a moving ref, it is what the **unpinned-uses**
 finding below rejects, and the examples in this file used it until now.
@@ -42,7 +47,7 @@ flip enforcement on by passing `repo-standards-strict: true` to
 ```yaml
 jobs:
   ci:
-    uses: resq-software/.github/.github/workflows/required.yml@<sha>  # v<version>
+    uses: resq-software/.github/.github/workflows/required.yml@20ae467d59f14dc9157704ad4e9e473092dd589a  # v1.0.0
     with:
       lang: rust
       repo-standards-strict: true   # turn conformance violations into a hard failure
@@ -89,7 +94,7 @@ jobs:
     # Dependabot PRs can't inherit secrets into a cross-repo reusable workflow (startup_failure),
     # which would block Dependabot's own PRs. Skip it there; push/schedule still scan the branch.
     if: ${{ github.actor != 'dependabot[bot]' }}
-    uses: resq-software/.github/.github/workflows/security-scan.yml@<sha>  # v<version>
+    uses: resq-software/.github/.github/workflows/security-scan.yml@20ae467d59f14dc9157704ad4e9e473092dd589a  # v1.0.0
     with:
       languages: '["rust","javascript-typescript"]'
       enable-semgrep: true
