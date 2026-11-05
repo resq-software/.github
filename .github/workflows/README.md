@@ -1,7 +1,26 @@
 # Reusable workflows
 
-Org-wide CI building blocks. Callable from any `resq-software/*` repo via
-`uses: resq-software/.github/.github/workflows/<name>.yml@main`.
+Org-wide CI building blocks. Callable from any `resq-software/*` repo.
+
+Pin by commit SHA with a trailing version comment — the SHA is what runs,
+and the comment is what lets Dependabot find the next version:
+
+```yaml
+uses: resq-software/.github/.github/workflows/<name>.yml@<sha>  # v<version>
+```
+
+This repository carries no release tags yet, so there is at present no
+version a reader could name in that comment. Until one exists, pin the SHA
+and leave the comment off rather than inventing a version — a comment that
+names a tag which does not exist is worse than none, because Dependabot
+resolves it to nothing and the pin silently stops being updatable.
+`docs/standards/05-workflow-releases.md` clause 1 records the missing tags
+as a rule this repository is itself breaking.
+
+`@main` is not a pin. It is a moving ref, it is what the **unpinned-uses**
+finding below rejects, and the examples in this file used it until now.
+See `docs/standards/05-workflow-releases.md` for the contract and
+`docs/standards/06-versioning.md` for the tag grammar.
 
 ## `repo-standards.yml`
 
@@ -23,7 +42,7 @@ flip enforcement on by passing `repo-standards-strict: true` to
 ```yaml
 jobs:
   ci:
-    uses: resq-software/.github/.github/workflows/required.yml@main
+    uses: resq-software/.github/.github/workflows/required.yml@<sha>  # v<version>
     with:
       lang: rust
       repo-standards-strict: true   # turn conformance violations into a hard failure
@@ -70,7 +89,7 @@ jobs:
     # Dependabot PRs can't inherit secrets into a cross-repo reusable workflow (startup_failure),
     # which would block Dependabot's own PRs. Skip it there; push/schedule still scan the branch.
     if: ${{ github.actor != 'dependabot[bot]' }}
-    uses: resq-software/.github/.github/workflows/security-scan.yml@main
+    uses: resq-software/.github/.github/workflows/security-scan.yml@<sha>  # v<version>
     with:
       languages: '["rust","javascript-typescript"]'
       enable-semgrep: true
