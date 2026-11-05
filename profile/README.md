@@ -1,8 +1,8 @@
 <div align="center">
   <img src="https://raw.githubusercontent.com/resq-software/.github/main/assets/resq-icon-color.svg" alt="ResQ Systems mark" width="88">
   <h1>ResQ Systems</h1>
-  <p><strong>Software for autonomous disaster response.</strong></p>
-  <p>Resilient coordination, simulation, and operator tooling for autonomous systems working through degraded networks and infrastructure.</p>
+  <p><strong>Coordination software for disaster response.</strong></p>
+  <p>Resilient coordination, simulation, and operator tooling for systems working through degraded networks and infrastructure.</p>
 
   [![Get started](https://img.shields.io/badge/get_started-get.resq.software-238636?style=flat-square&logo=gnubash&logoColor=white)](https://get.resq.software)
   [![Live visualization](https://img.shields.io/badge/live_viz-viz.resq.software-0e7490?style=flat-square)](https://viz.resq.software)
@@ -33,7 +33,7 @@ The onboarding flow authenticates with GitHub, installs a pinned Nix toolchain, 
     </td>
     <td width="25%" valign="top">
       <a href="https://viz.resq.software"><strong>Viz</strong></a><br>
-      Live 3D common operating picture for simulated multi-agency autonomous response.
+      Live 3D common operating picture for simulated multi-agency response.
     </td>
     <td width="25%" valign="top">
       <a href="https://docs.resq.software"><strong>Docs</strong></a><br>
@@ -52,13 +52,10 @@ The onboarding flow authenticates with GitHub, installs a pinned Nix toolchain, 
 flowchart LR
     Foundation["Packages & building blocks<br/>npm · dotnet · vcpkg"]
     Tools["SDKs & developer tools<br/>dotnet-sdk · pypi · crates"]
-    Trust["Decentralized coordination<br/>programs"]
     Operations["Simulation & operations<br/>viz"]
 
     Foundation --> Tools
-    Tools --> Trust
     Tools --> Operations
-    Trust --> Operations
 ```
 
 ## Public repositories
@@ -67,31 +64,30 @@ flowchart LR
 
 | Repository | What it provides | Stack |
 | :--- | :--- | :--- |
-| [`viz`](https://github.com/resq-software/viz) | Live 3D coordination view with mesh topology, hazard fusion, telemetry, and multi-agency simulation | TypeScript, Three.js, .NET |
-| [`npm`](https://github.com/resq-software/npm) | Shared UI, mapping, telemetry, security, analytics, and foundational TypeScript packages | TypeScript, React |
-| [`docs`](https://github.com/resq-software/docs) | Official operations, platform, integration, and API documentation | MDX, Mintlify |
+| [`viz`](https://github.com/resq-software/viz) | Web application | TypeScript, Three.js, .NET |
+| [`npm`](https://github.com/resq-software/npm) | Shared TypeScript packages | TypeScript, React |
+| [`docs`](https://github.com/resq-software/docs) | Documentation site | MDX, Mintlify |
 
 ### SDKs
 
 | Repository | What it provides | Stack |
 | :--- | :--- | :--- |
-| [`dotnet-sdk`](https://github.com/resq-software/dotnet-sdk) | Typed clients, protocol contracts, blockchain anchoring, and simulation harnesses | C#, Protobuf |
-| [`pypi`](https://github.com/resq-software/pypi) | FastMCP server exposing digital-twin, drone-coordination, and incident-response capabilities to AI clients | Python, FastMCP |
+| [`dotnet-sdk`](https://github.com/resq-software/dotnet-sdk) | .NET SDK | C#, Protobuf |
+| [`pypi`](https://github.com/resq-software/pypi) | Python package (MCP server) | Python, FastMCP |
 
 ### Runtime
 
 | Repository | What it provides | Stack |
 | :--- | :--- | :--- |
-| [`crates`](https://github.com/resq-software/crates) | The `resq` CLI/TUI workspace for repository automation, diagnostics, deployment, and operations | Rust |
-| [`programs`](https://github.com/resq-software/programs) | On-chain programs for decentralized airspace management and autonomous delivery coordination | Rust, Solana Anchor |
+| [`crates`](https://github.com/resq-software/crates) | The `resq` CLI and TUI workspace | Rust |
 
 ### Foundation
 
 | Repository | What it provides | Stack |
 | :--- | :--- | :--- |
-| [`dotnet`](https://github.com/resq-software/dotnet) | Reusable building blocks for Clean and Hexagonal .NET architectures | C# |
-| [`vcpkg`](https://github.com/resq-software/vcpkg) | C++ libraries and foundational data structures for robotics software | C++17, CMake |
-| [`dev`](https://github.com/resq-software/dev) | Reproducible developer onboarding, pinned installers, and canonical repository hooks | Shell, PowerShell, Nix |
+| [`dotnet`](https://github.com/resq-software/dotnet) | .NET libraries | C# |
+| [`vcpkg`](https://github.com/resq-software/vcpkg) | C++ libraries (vcpkg registry) | C++17, CMake |
+| [`dev`](https://github.com/resq-software/dev) | Developer onboarding scripts and git hooks | Shell, PowerShell, Nix |
 
 ## Contribute
 
