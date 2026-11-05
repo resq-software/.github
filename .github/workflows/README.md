@@ -1,7 +1,31 @@
 # Reusable workflows
 
-Org-wide CI building blocks. Callable from any `resq-software/*` repo via
-`uses: resq-software/.github/.github/workflows/<name>.yml@main`.
+Org-wide CI building blocks. Callable from any `resq-software/*` repo.
+
+Pin by commit SHA with a trailing version comment — the SHA is what runs,
+and the comment is what lets Dependabot find the next version:
+
+```yaml
+uses: resq-software/.github/.github/workflows/<name>.yml@<sha>  # v<version>
+```
+
+The current version is **v1.0.0**, which tags commit `20ae467d59f14dc9157704ad4e9e473092dd589a`.
+So a pin on today's interface reads:
+
+```yaml
+uses: resq-software/.github/.github/workflows/required.yml@20ae467d59f14dc9157704ad4e9e473092dd589a  # v1.0.0
+```
+
+Semver here describes the workflows as an interface: `MAJOR` for a breaking
+input change, `MINOR` for a new input or job, `PATCH` for a fix that changes
+no interface. Bump the SHA and the comment together — a comment naming a tag
+that does not point at the pinned SHA is worse than no comment, because
+Dependabot resolves it to the wrong thing.
+
+`@main` is not a pin. It is a moving ref, it is what the **unpinned-uses**
+finding below rejects, and the examples in this file used it until now.
+See `docs/standards/05-workflow-releases.md` for the contract and
+`docs/standards/06-versioning.md` for the tag grammar.
 
 ## `repo-standards.yml`
 
@@ -23,7 +47,7 @@ flip enforcement on by passing `repo-standards-strict: true` to
 ```yaml
 jobs:
   ci:
-    uses: resq-software/.github/.github/workflows/required.yml@main
+    uses: resq-software/.github/.github/workflows/required.yml@20ae467d59f14dc9157704ad4e9e473092dd589a  # v1.0.0
     with:
       lang: rust
       repo-standards-strict: true   # turn conformance violations into a hard failure
@@ -70,7 +94,7 @@ jobs:
     # Dependabot PRs can't inherit secrets into a cross-repo reusable workflow (startup_failure),
     # which would block Dependabot's own PRs. Skip it there; push/schedule still scan the branch.
     if: ${{ github.actor != 'dependabot[bot]' }}
-    uses: resq-software/.github/.github/workflows/security-scan.yml@main
+    uses: resq-software/.github/.github/workflows/security-scan.yml@20ae467d59f14dc9157704ad4e9e473092dd589a  # v1.0.0
     with:
       languages: '["rust","javascript-typescript"]'
       enable-semgrep: true

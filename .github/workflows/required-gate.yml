@@ -5,9 +5,11 @@
 # `default-branch-baseline` (id 15191038) on PRs and pushes to main.
 #
 # This repo publishes reusable workflows and doesn't have language CI
-# of its own, so the gate is a pass-through. The actual validation of
-# workflow files (actionlint, zizmor, CodeQL actions-language, etc.)
-# runs in security-scan.yml which is called via a separate caller.
+# of its own, so the gate carries only the checks that apply to a
+# workflow-publishing repo: repo-standards and private-name-guard. The
+# actual validation of workflow files (actionlint, zizmor, CodeQL
+# actions-language, etc.) runs in security-scan.yml which is called via
+# a separate caller.
 #
 # Without this file, every PR on resq-software/.github hangs on
 # "Expected — Waiting for status to be reported" because reusable
@@ -33,9 +35,18 @@ jobs:
     name: Repo standards
     uses: ./.github/workflows/repo-standards.yml
 
+  # Dogfood the private-name forward guard on this repo itself. Strict by
+  # default -- that file's header explains why a hit is a true positive by
+  # construction, and why a tree it could not assess fails rather than passes.
+  private-name-guard:
+    name: Private-name guard
+    uses: ./.github/workflows/private-name-guard.yml
+    secrets:
+      ORG_READ_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+
   required:
     name: required
-    needs: [repo-standards]
+    needs: [repo-standards, private-name-guard]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -46,9 +57,19 @@ jobs:
       - name: Evaluate upstream results
         env:
           REPO_STANDARDS_RESULT: ${{ needs.repo-standards.result }}
+          PRIVATE_NAME_GUARD_RESULT: ${{ needs.private-name-guard.result }}
         run: |
           set -eu
           case "$REPO_STANDARDS_RESULT" in
             success|skipped|"") echo "ok — .github repo has no language CI to gate on" ;;
             *) echo "::error::repo-standards returned: $REPO_STANDARDS_RESULT"; exit 1 ;;
+          esac
+          # Unlike repo-standards above, `skipped` and empty are NOT accepted
+          # here. The guard exists to stop a private repo name reaching a
+          # public tree, and "it did not run" is not evidence that none did.
+          # Accepting silence here would reintroduce exactly the false
+          # assurance the guard was written to remove.
+          case "$PRIVATE_NAME_GUARD_RESULT" in
+            success) echo "ok — no private repository name in this tree" ;;
+            *) echo "::error::private-name-guard returned: ${PRIVATE_NAME_GUARD_RESULT:-<empty>} — a tree that was not assessed is not a clean tree"; exit 1 ;;
           esac
