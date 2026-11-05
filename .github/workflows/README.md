@@ -9,6 +9,14 @@ and the comment is what lets Dependabot find the next version:
 uses: resq-software/.github/.github/workflows/<name>.yml@<sha>  # v<version>
 ```
 
+This repository carries no release tags yet, so there is at present no
+version a reader could name in that comment. Until one exists, pin the SHA
+and leave the comment off rather than inventing a version — a comment that
+names a tag which does not exist is worse than none, because Dependabot
+resolves it to nothing and the pin silently stops being updatable.
+`docs/standards/05-workflow-releases.md` clause 1 records the missing tags
+as a rule this repository is itself breaking.
+
 `@main` is not a pin. It is a moving ref, it is what the **unpinned-uses**
 finding below rejects, and the examples in this file used it until now.
 See `docs/standards/05-workflow-releases.md` for the contract and
