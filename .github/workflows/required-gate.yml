@@ -42,7 +42,7 @@ jobs:
     name: Private-name guard
     uses: ./.github/workflows/private-name-guard.yml
     secrets:
-      ORG_READ_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+      PRIVATE_NAME_GUARD_TOKEN: ${{ secrets.PRIVATE_NAME_GUARD_TOKEN }}
 
   required:
     name: required
