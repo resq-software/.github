@@ -33,9 +33,25 @@
 # and the private-repo count is non-public metadata independently of the
 # names. Resolve a finding by opening the reported path and line.
 #
-# TOKEN: needs the private-repo list, which GITHUB_TOKEN cannot see. Pass an
-# `ORG_READ_TOKEN` secret (fine-grained, org-wide, Metadata: Read) -- the same
-# secret org-conformance-sweep.yml uses. Without it the enumeration returns
+# TOKEN: needs the private-repo list, which GITHUB_TOKEN cannot see. Pass a
+# `PRIVATE_NAME_GUARD_TOKEN` secret, fine-grained and org-wide, carrying
+# exactly Metadata: Read + Organization administration: Read -- Metadata for
+# the names, Organization administration for the count they are checked
+# against.
+#
+# Deliberately NOT the `ORG_READ_TOKEN` that org-conformance-sweep.yml uses. That
+# secret also carries Contents: Read and Actions: Read, which the sweep needs
+# and this job never does, and this job runs on every push and pull request in
+# every public repo that adopts it. There is no fallback to the broader secret,
+# on purpose: a guard that quietly accepted a credential wider than its own
+# work would be practising exactly the silent degradation it refuses
+# everywhere else.
+#
+# Store the same narrow value in the Dependabot secret store under the same
+# name. A Dependabot run resolves `secrets` from that store and not from the
+# Actions one, so one name covers both kinds of event.
+#
+# Without it the enumeration returns
 # zero names and EVERY tree looks clean, which is the exact false-assurance
 # mode this guard exists to prevent, so a zero enumeration FAILS LOUDLY and
 # never passes. For the same reason a pull request from a fork, which cannot
@@ -88,8 +104,8 @@ on:
         required: false
         default: "."
     secrets:
-      ORG_READ_TOKEN:
-        description: "Fine-grained org-wide token, Metadata: Read. Required in practice."
+      PRIVATE_NAME_GUARD_TOKEN:
+        description: "Fine-grained org-wide token: Metadata: Read + Organization administration: Read, and nothing else. Narrow by design -- do not pass the sweep's broader secret. Required in practice."
         required: false
 
 permissions:
@@ -115,7 +131,7 @@ jobs:
         env:
           # Inputs that reach `run:` are forwarded through env and referenced
           # as "$VAR", never interpolated at template time.
-          GH_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+          GH_TOKEN: ${{ secrets.PRIVATE_NAME_GUARD_TOKEN }}
           ORG: ${{ github.repository_owner }}
           STRICT: ${{ inputs.strict }}
           SCAN_PATH: ${{ inputs.scan-path }}
@@ -132,7 +148,7 @@ jobs:
           # means the private-repo list is unavailable, and an empty list
           # makes every tree look clean.
           if [ "${IS_FORK:-false}" = "true" ]; then
-            echo "::error title=private-name-guard::fork pull requests cannot read ORG_READ_TOKEN, so the private-repo list is unavailable and this tree was NOT ASSESSED. Re-run from a branch in this repository."
+            echo "::error title=private-name-guard::fork pull requests cannot read PRIVATE_NAME_GUARD_TOKEN, so the private-repo list is unavailable and this tree was NOT ASSESSED. Re-run from a branch in this repository."
             exit 1
           fi
 
@@ -148,12 +164,12 @@ jobs:
           # secret rather than as the wrong KIND of secret, which sends the
           # reader to the wrong settings page.
           if [ "${EVENT_ACTOR:-}" = "dependabot[bot]" ] && [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error title=private-name-guard::this is a Dependabot event, and Dependabot cannot read Actions secrets. Provision a Dependabot secret (organization or repository) also named ORG_READ_TOKEN with Metadata: Read. Until then a Dependabot pull request cannot be assessed, and an unassessed tree is not a clean tree."
+            echo "::error title=private-name-guard::this is a Dependabot event, and Dependabot cannot read Actions secrets. Provision a Dependabot secret (organization or repository) also named PRIVATE_NAME_GUARD_TOKEN with Metadata: Read + Organization administration: Read. Until then a Dependabot pull request cannot be assessed, and an unassessed tree is not a clean tree."
             exit 1
           fi
           
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error title=private-name-guard::ORG_READ_TOKEN is not set, so the private-repo list would be empty and every tree would look clean. Add the secret (fine-grained, org-wide, Metadata: Read) and forward it to this workflow."
+            echo "::error title=private-name-guard::PRIVATE_NAME_GUARD_TOKEN is not set, so the private-repo list would be empty and every tree would look clean. Add the secret (fine-grained, org-wide, Metadata: Read + Organization administration: Read) and forward it to this workflow."
             exit 1
           fi
 
@@ -181,6 +197,11 @@ jobs:
           #
           # Neither number is printed. The count of private repositories is
           # non-public metadata on its own, independently of the names.
+          # `.owned_private_repos` is served only to a caller the org treats as
+          # an administrator; on a fine-grained PAT that is Organization
+          # administration: Read. A token holding Metadata alone still enumerates
+          # names at the call above, then lands in the null branch below -- so the
+          # weaker token does not degrade this guard, it stops it.
           if ! expected=$(gh api "/orgs/$ORG" --jq '.owned_private_repos'); then
             echo "::error title=private-name-guard::cannot read the organization record to confirm the private-repository enumeration is complete, so completeness is unknown and this tree was NOT assessed."
             exit 1
@@ -192,7 +213,7 @@ jobs:
           esac
           got=$(printf '%s\n' "$priv" | grep -c . || true)
           if [ "$got" -ne "$expected" ]; then
-            echo "::error title=private-name-guard::the private-repository enumeration is incomplete -- fewer names came back than this organization is reported to own. Every missing name is one this guard would not search for, so this tree was NOT assessed. Widen ORG_READ_TOKEN to all repositories."
+            echo "::error title=private-name-guard::the private-repository enumeration is incomplete -- fewer names came back than this organization is reported to own. Every missing name is one this guard would not search for, so this tree was NOT assessed. Widen PRIVATE_NAME_GUARD_TOKEN to all repositories."
             exit 1
           fi
           
