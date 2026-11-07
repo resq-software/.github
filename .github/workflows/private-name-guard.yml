@@ -26,8 +26,21 @@
 # service name, an environment-variable name, an endpoint path, a package name
 # that is not a repository, or a hostname. Any of those can name something
 # non-public just as effectively, and a green result here says nothing about
-# them. A green check means "no non-public REPOSITORY name appears in this
-# tree". It must not be read as "nothing internal appears in this tree".
+# them.
+#
+# Even for repository names, a green check is narrower than "this tree is
+# free of them", in four stated ways:
+#   * It searches the CONTENTS of text files. File and directory names are
+#     not matched, and a file grep classifies as binary is not searched.
+#   * A name with no `-`, `_` or `.` is matched only in its qualified forms
+#     (see MATCH TIERS), so a bare or path-shaped mention of it passes. The
+#     step summary says so whenever a name was withheld this way.
+#   * With `strict: false` a hit is a warning and the job still passes, so a
+#     green check under that setting means only that the scan ran.
+#   * It looks at HEAD only (see WHAT IT DOES NOT DO).
+# So a green check means "no non-public REPOSITORY name appears, in a form
+# this guard matches, in the text files of this tree". It must not be read as
+# "nothing internal appears in this tree".
 #
 # That boundary is not a gap waiting to be closed. A repository name is
 # enumerable, so this guard can be complete about it, and it refuses to run
@@ -84,8 +97,8 @@
 #              separator (`-`, `_` or `.`). A single-token name is withheld,
 #              whatever its casing. That asymmetry is measured, not timid: the
 #              same audit's first pass reported six leaked repos where three
-#              existed, because two of the names are also the English words
-#              `research` and `scripts` -- and a case-insensitive bare pass
+#              existed, because two of the names are also ordinary English
+#              words -- and a case-insensitive bare pass
 #              matches the company name in all 30-odd copyright headers.
 #
 #              The rule used to be "nothing but lowercase ASCII letters", which
@@ -470,8 +483,8 @@ jobs:
               echo "> path-shaped reference such as \`<name>/some/path\`, which discloses"
               echo "> internal layout. A path-shaped pass cannot run in this gate because"
               echo "> single-token path segments are pervasive in legitimate public content"
-              echo "> -- measured across the public repos, \`scripts/\` occurs 308 times,"
-              echo "> \`v2/\` 168 and \`Services/\` 124 -- so it belongs in the scheduled"
+              echo "> -- measured across the public repos, \`v2/\` occurs 168 times,"
+              echo "> \`Services/\` 124 and \`API/\` 24 -- so it belongs in the scheduled"
               echo "> conformance sweep, where a false positive costs a report and not a"
               echo "> blocked merge. Names joined by a separator are checked in both tiers."
             fi
