@@ -62,22 +62,38 @@
 #              case-insensitively). Forms that cannot occur in ordinary prose:
 #              `<org>/<name>`, `<name>.git`, `<name>@<40-hex>`, and
 #              `repository_name: <name>`.
-#   bare       Whole-word and CASE-SENSITIVE, and only for names that are not
-#              prose-shaped, where prose-shaped means "nothing but lowercase
-#              ASCII letters". That asymmetry is measured, not timid: the same
-#              audit's first pass reported six leaked repos where three
+#   bare       Whole-word and CASE-SENSITIVE, and only for names carrying a
+#              separator (`-`, `_` or `.`). A single-token name is withheld,
+#              whatever its casing. That asymmetry is measured, not timid: the
+#              same audit's first pass reported six leaked repos where three
 #              existed, because two of the names are also the English words
 #              `research` and `scripts` -- and a case-insensitive bare pass
-#              matches the company name in all 30-odd copyright headers. A
-#              name that cannot be bare-matched safely is still fully covered
-#              by the qualified tier, and the summary says so when any name
-#              was withheld, so the gap is visible rather than silent.
+#              matches the company name in all 30-odd copyright headers.
+#
+#              The rule used to be "nothing but lowercase ASCII letters", which
+#              keyed on shape. Shape does not predict collision. Measured as
+#              whole words across all 11 public trees: `node` occurs 6497
+#              times, `v2` 1013, `API` 992, `Gateway` 124, `Core` 118, while
+#              `db1`, `ci2`, `sdk2` and `web3` occur 0 times -- so neither
+#              length nor case nor digits separates the dangerous names from
+#              the safe ones. Token count does. Keying on token count also
+#              removes a dependency the old rule rested on without saying so:
+#              where a private name differs from a public brand or namespace
+#              token only by letter case, case-sensitivity alone was keeping
+#              this guard green.
+#
+#              A name that cannot be bare-matched safely is still fully covered
+#              by the qualified tier, and the summary says so when any name was
+#              withheld -- including that path-shaped references to such a name
+#              are not caught here -- so the gap is visible rather than silent.
 #
 # SELF-TEST: a matcher that silently stops matching reports a clean tree, so
-# the real scan is gated on six controls -- three positive (qualified slug,
-# manifest form, bare whole-word), one proving the bare matcher does fire on
-# a prose-shaped token, and two asserting the prose-shape classifier sorts
-# lowercase and mixed-case tokens correctly. Any control failure exits 2
+# the real scan is gated on eight controls -- five positive (qualified slug,
+# manifest form, bare whole-word, and the bare matcher firing on a
+# single-token name and on a separator-joined one), and three asserting the
+# single-token classifier sorts an all-lowercase token, a MIXED-CASE token and
+# a separator-joined name correctly. The mixed-case assertion is the one that
+# keeps the case dependency from coming back. Any control failure exits 2
 # without reporting a result.
 #
 # LOCAL USE: the script body defaults SCAN_PATH and GITHUB_STEP_SUMMARY, so
@@ -223,11 +239,24 @@ jobs:
           ere() { printf '%s' "$1" | sed 's/\./\\./g'; }
           ORG_E=$(ere "$ORG")
 
-          # True when the name cannot be told apart from an English word.
-          prose_shaped() {
+          # True when the name is a SINGLE TOKEN -- no `-`, `_` or `.` breaking
+          # it into parts -- and so cannot be told apart from an ordinary
+          # identifier or word occurring in code or prose. Bare matching is
+          # withheld for these. The qualified tier still covers them in full.
+          #
+          # This supersedes an all-lowercase test. That test keyed on SHAPE, and
+          # shape does not predict collision. Measured as whole words across all
+          # 11 public trees: `node` occurs 6497 times, `v2` 1013, `API` 992,
+          # `Gateway` 124, `Core` 118 -- while `db1`, `ci2`, `sdk2` and `web3`
+          # occur 0 times. Length does not separate those groups (`node` is four
+          # characters, `Gateway` seven), nor does case, nor the presence of
+          # digits. What separates them is how many tokens the name has: a name
+          # joined by a separator is distinctive, a single token is not,
+          # whatever its casing.
+          single_token() {
             case "$1" in
-              *[!a-z]*) return 1 ;;
-              *)        return 0 ;;
+              *-*|*_*|*.*) return 1 ;;
+              *)           return 0 ;;
             esac
           }
 
@@ -240,6 +269,20 @@ jobs:
               "|repository_name\"?[[:space:]]*:[[:space:]]*\"?${e}([^A-Za-z0-9_.-]|\$)"
           }
 
+          # CASE-SENSITIVE, and it must stay that way. Measured: making this
+          # pass case-insensitive turns THIS repo red with 65 hits, and a
+          # slash-suffixed variant of it produces 96 false positives across five
+          # public repos, because the product's own namespace appears in cache
+          # paths, XDG config paths, generated documentation links, an npm
+          # scope, a C++ include root and MQTT topic strings.
+          #
+          # A private repo name can also differ from a public brand or namespace
+          # token only by letter case. Where that happens, case-sensitivity
+          # alone is what keeps this guard green -- an accidental dependency, not
+          # a design, and one no reader of this file could see. Withholding bare
+          # matching for every single-token name removes that dependency rather
+          # than resting on it, which is why single_token() above does not look
+          # at case at all.
           bare_re() {
             e=$(ere "$1")
             printf '%s' "(^|[^A-Za-z0-9_.-])${e}([^A-Za-z0-9_.-]|\$)"
@@ -298,6 +341,7 @@ jobs:
             echo '{ "repository_name": "zzManifestCanary2" }'
             echo "a bare mention of zzBareCanary3 here"
             echo "a bare mention of canaryproseonly here"
+            echo "a bare mention of zz-multi-canary5 here"
           } > "$ctl/fixture.txt"
 
           ctl_fail=0
@@ -314,18 +358,30 @@ jobs:
             "$(hits "$(qualified_re zzManifestCanary2)" -i "$ctl" | wc -l)"
           expect_hit "bare whole-word form" \
             "$(hits "$(bare_re zzBareCanary3)" "" "$ctl" | wc -l)"
-          # The bare matcher must fire on a prose-shaped token too. Such names
+          # The bare matcher must fire on a withheld-shaped token too. Such names
           # are withheld from it by policy, not because the matcher is blind,
           # and only a control can tell those two apart.
-          expect_hit "bare matcher on a prose-shaped token" \
+          expect_hit "bare matcher on a single-token name" \
             "$(hits "$(bare_re canaryproseonly)" "" "$ctl" | wc -l)"
+          expect_hit "bare matcher on a separator-joined name" \
+            "$(hits "$(bare_re zz-multi-canary5)" "" "$ctl" | wc -l)"
 
-          if ! prose_shaped canaryproseonly; then
-            echo "::error title=private-name-guard::control failed -- prose-shape test did not classify an all-lowercase token as prose-shaped"
+          # The classifier decides which names lose bare matching, so a wrong
+          # answer in either direction is silent: too eager and a name that
+          # needs bare matching stops getting it; too lax and the accidental
+          # case dependency comes back. Both directions are asserted, and the
+          # mixed-case case is asserted explicitly because the whole point of
+          # replacing the old all-lowercase test was that case must not matter.
+          if ! single_token canaryproseonly; then
+            echo "::error title=private-name-guard::control failed -- single-token test did not classify an all-lowercase single token as a single token"
             ctl_fail=1
           fi
-          if prose_shaped zzBareCanary3; then
-            echo "::error title=private-name-guard::control failed -- prose-shape test wrongly classified a mixed-case token as prose-shaped"
+          if ! single_token zzBareCanary3; then
+            echo "::error title=private-name-guard::control failed -- single-token test did not classify a MIXED-CASE single token as a single token, so bare matching would not be withheld for it and the case-sensitivity dependency would remain"
+            ctl_fail=1
+          fi
+          if single_token zz-multi-canary5; then
+            echo "::error title=private-name-guard::control failed -- single-token test wrongly classified a separator-joined name as a single token, so bare matching would be withheld from a name that can safely have it"
             ctl_fail=1
           fi
 
@@ -342,7 +398,7 @@ jobs:
           while IFS= read -r name; do
             [ -n "$name" ] || continue
             hits "$(qualified_re "$name")" -i "$SCAN_PATH" >> "$ctl/findings"
-            if prose_shaped "$name"; then
+            if single_token "$name"; then
               bare_withheld=yes
             else
               hits "$(bare_re "$name")" "" "$SCAN_PATH" >> "$ctl/findings"
@@ -388,10 +444,18 @@ jobs:
             fi
             if [ "$bare_withheld" = yes ]; then
               echo
-              echo "> Some private repository names are made only of lowercase letters and"
-              echo "> cannot be told apart from ordinary English words, so they were checked"
-              echo "> in qualified forms only. A bare mention of such a name in prose would"
-              echo "> not be caught by this guard."
+              echo "> Some private repository names are a single token, with no separator to"
+              echo "> tell them apart from an ordinary identifier or word, so they were"
+              echo "> checked in qualified forms only -- \`<org>/<name>\`, \`<name>.git\`,"
+              echo "> \`<name>@<40-hex>\` and \`repository_name: <name>\`. For those names two"
+              echo "> things would NOT be caught here: a bare mention in prose, and a"
+              echo "> path-shaped reference such as \`<name>/some/path\`, which discloses"
+              echo "> internal layout. A path-shaped pass cannot run in this gate because"
+              echo "> single-token path segments are pervasive in legitimate public content"
+              echo "> -- measured across the public repos, \`scripts/\` occurs 308 times,"
+              echo "> \`v2/\` 168 and \`Services/\` 124 -- so it belongs in the scheduled"
+              echo "> conformance sweep, where a false positive costs a report and not a"
+              echo "> blocked merge. Names joined by a separator are checked in both tiers."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
