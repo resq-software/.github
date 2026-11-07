@@ -67,6 +67,22 @@ on:
         type: boolean
         required: false
         default: true
+      enable-private-name-guard:
+        description: >
+          Run the private-name forward guard (private-name-guard.yml) over the
+          caller's tree. Requires the PRIVATE_NAME_GUARD_TOKEN secret to be
+          forwarded by name; without it the guard hard-fails rather than
+          reporting a clean tree, which is deliberate -- "it could not run" is
+          not evidence that no private name is present.
+
+          Defaults to FALSE purely so that moving this workflow's pin can never
+          by itself turn a repo's CI red. Dependabot bumps these `uses:` SHAs
+          unattended, and a default of true would mean an unrelated pin bump
+          red-gated the repo. Turn it on per repo in the same change that
+          forwards the secret.
+        type: boolean
+        required: false
+        default: false
       enable-vet:
         description: >
           Run safedep/vet OSS dependency policy scan against the caller repo's
@@ -118,6 +134,16 @@ on:
         required: false
       SAFEDEP_CLOUD_TENANT:
         description: SafeDep Cloud tenant. Used only when enable-vet is true.
+        required: false
+      PRIVATE_NAME_GUARD_TOKEN:
+        description: >
+          Fine-grained org-wide token (Metadata: Read + Organization
+          administration: Read, nothing else) used only when
+          enable-private-name-guard is true. Relayed unchanged to
+          private-name-guard.yml, which needs it to enumerate the org's
+          non-public repository names. Declared here so callers forward it by
+          name; `secrets: inherit` would hand this workflow every secret the
+          caller holds and trips zizmor's secrets-inherit audit.
         required: false
 
 permissions:
@@ -422,3 +448,15 @@ jobs:
         with:
           sarif_file: snyk.sarif
           category: snyk
+
+  # ── Private-name forward guard (opt-in per repo) ──────────────────────────
+  # Strict by default: private-name-guard.yml's header explains why a hit is a
+  # true positive by construction, and why a tree it could not assess fails
+  # rather than passes. Note the chain depth -- a caller reaching this through
+  # required.yml sits at GitHub's four-level nested-workflow limit.
+  private-name-guard:
+    name: private-name-guard
+    if: ${{ inputs.enable-private-name-guard }}
+    uses: ./.github/workflows/private-name-guard.yml
+    secrets:
+      PRIVATE_NAME_GUARD_TOKEN: ${{ secrets.PRIVATE_NAME_GUARD_TOKEN }}
