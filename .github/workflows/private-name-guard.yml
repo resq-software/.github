@@ -150,6 +150,32 @@ on:
         type: string
         required: false
         default: "."
+      scan-text:
+        description: >
+          Also scan the TEXT this pull request adds -- its title, its body, and
+          the messages of the commits it introduces -- not only the files in the
+          tree.
+
+          The tree scan cannot see any of those surfaces, and they are a proven
+          carrier rather than a hypothetical one: the one qualified-tier
+          disclosure found org-wide on 2026-11-07 reached a public CHANGELOG.md
+          because semantic-release rendered it there from a commit message. The
+          tree guard then saw it only after it had already landed.
+
+          pull_request events only. On any other event there is no pull request
+          to read, and the step summary says so rather than counting it as
+          looked-at-and-clean.
+
+          That leaves no real gap, because nothing reaches a default branch here
+          except through a pull request -- the default-branch-baseline ruleset
+          requires one and its bypass mode is `pull_request`, so even a bypass
+          actor cannot push directly. The text of a merge or squash commit is
+          built from the pull request title and body, and both are scanned on the
+          pull request itself. So a push event has nothing left to assess that
+          was not already assessed before the merge.
+        type: boolean
+        required: false
+        default: false
     secrets:
       PRIVATE_NAME_GUARD_TOKEN:
         description: "Fine-grained org-wide token: Metadata: Read + Organization administration: Read, and nothing else. Narrow by design -- do not pass the sweep's broader secret. Required in practice."
@@ -173,6 +199,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+          # Full history only when the text scan needs it, because reading the
+          # commit messages a pull request adds requires both endpoints of
+          # base..head to be present. A shallow clone has neither.
+          #
+          # The quotes are load-bearing. `inputs.scan-text && 0 || 1` evaluates
+          # to 1 in BOTH branches: 0 is falsy in a GitHub expression, so the
+          # `||` swallows it. Quoting makes each branch a non-empty string, and
+          # non-empty strings are truthy.
+          fetch-depth: ${{ inputs.scan-text && '0' || '1' }}
 
       - name: Guard against private repository names
         env:
@@ -184,6 +219,15 @@ jobs:
           SCAN_PATH: ${{ inputs.scan-path }}
           IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
           EVENT_ACTOR: ${{ github.actor }}
+          SCAN_TEXT: ${{ inputs.scan-text }}
+          EVENT_NAME: ${{ github.event_name }}
+          # Attacker-controlled strings. They are forwarded through env and read
+          # as "$VAR" so they are never interpolated into the script at template
+          # time -- a pull request title of `$(...)` is then just characters.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
 
@@ -452,6 +496,71 @@ jobs:
           n=$(grep -c . "$ctl/findings" || true)
           n=${n:-0}
 
+          # ---- text scan (opt-in) -----------------------------------------
+          # The tree scan above reads FILES. A commit message, a pull request
+          # title and a pull request body are none of those, and the tree guard
+          # is blind to all three by construction.
+          #
+          # Everything here reuses the machinery above deliberately: the same
+          # enumerated name list, the same completeness cross-check, the same
+          # two matcher tiers, the same self-tested matcher, and the same
+          # report-the-coordinate-never-the-text rule. A second copy of that
+          # logic is the last thing this guard needs.
+          tn=0
+          text_scanned=no
+          : > "$ctl/text-findings"
+          if [ "${SCAN_TEXT:-false}" = "true" ]; then
+            if [ "${EVENT_NAME:-}" != "pull_request" ]; then
+              # Not an error: there is genuinely no pull request to read. But it
+              # is not a clean result either, and the summary must not imply one.
+              text_scanned=no
+            else
+              txt="$wk/text"
+              mkdir -p "$txt"
+
+              # File NAMES carry the identity, because the reporter prints the
+              # path and never the match. `commit-<sha>` therefore tells a
+              # reviewer which commit to open without printing what was found.
+              printf '%s' "${PR_TITLE:-}" > "$txt/pull-request-title"
+              printf '%s' "${PR_BODY:-}"  > "$txt/pull-request-body"
+
+              if [ -n "${PR_BASE_SHA:-}" ] && [ -n "${PR_HEAD_SHA:-}" ]; then
+                if ! git rev-list "$PR_BASE_SHA".."$PR_HEAD_SHA" > "$wk/shas" 2>"$wk/git.err"; then
+                  echo "::error title=private-name-guard::cannot list the commits this pull request adds, so its commit messages were NOT assessed. Unassessed text is not clean text."
+                  exit 2
+                fi
+                while IFS= read -r sha; do
+                  [ -n "$sha" ] || continue
+                  # %B is subject AND body. Appending %s as well double-counted
+                  # every hit in a subject line, which inflated the reported
+                  # total and listed the same place twice.
+                  git log -1 --format='%B' "$sha" > "$txt/commit-$sha" 2>/dev/null || {
+                    echo "::error title=private-name-guard::cannot read the message of commit $sha, so this pull request's text was NOT fully assessed."
+                    exit 2
+                  }
+                done < "$wk/shas"
+              fi
+
+              while IFS= read -r name; do
+                [ -n "$name" ] || continue
+                hits "$(qualified_re "$name")" -i "$txt" >> "$ctl/text-findings"
+                single_token "$name" || hits "$(bare_re "$name")" "" "$txt" >> "$ctl/text-findings"
+              done < "$ctl/names"
+
+              # Same refusal as the tree scan: a grep that errored means part of
+              # the text was never read, so neither answer describes it.
+              if [ -s "$wk/grep.failed" ]; then
+                echo "::error title=private-name-guard::the pull request text could not be fully read, so it was NOT assessed. A clean result is not being reported."
+                exit 2
+              fi
+
+              sort -u -t: -k1,1 -k2,2n "$ctl/text-findings" -o "$ctl/text-findings"
+              tn=$(grep -c . "$ctl/text-findings" || true)
+              tn=${tn:-0}
+              text_scanned=yes
+            fi
+          fi
+
           # ---- report -----------------------------------------------------
           {
             echo "## Private-name forward guard"
@@ -488,9 +597,39 @@ jobs:
               echo "> conformance sweep, where a false positive costs a report and not a"
               echo "> blocked merge. Names joined by a separator are checked in both tiers."
             fi
+            if [ "${SCAN_TEXT:-false}" = "true" ]; then
+              echo
+              if [ "$text_scanned" = no ]; then
+                echo "> The pull-request text scan was requested but did not run: this is a"
+                echo "> \`$EVENT_NAME\` event, and there is no pull request to read. The title,"
+                echo "> body and commit messages of this change were NOT assessed here."
+              elif [ "$tn" -eq 0 ]; then
+                echo "No private repository name appears in this pull request's title, body"
+                echo "or added commit messages."
+              else
+                echo "**$tn** location(s) in this pull request's TEXT name a private"
+                echo "repository. Commit messages and the pull request body are not files,"
+                echo "so the tree table above does not cover them."
+                echo
+                echo "| where | line |"
+                echo "| --- | --- |"
+                while IFS= read -r coord; do
+                  f=${coord%:*}; l=${coord##*:}
+                  b=$(basename "$f")
+                  case "$b" in
+                    commit-*) echo "| commit \`${b#commit-}\` | $l |" ;;
+                    *)        echo "| ${b//-/ } | $l |" ;;
+                  esac
+                done < "$ctl/text-findings"
+                echo
+                echo "A commit message cannot be edited after merge without rewriting"
+                echo "history, and a generated changelog will copy it into the tree. Amend"
+                echo "before this merges."
+              fi
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "$n" -eq 0 ]; then
+          if [ "$n" -eq 0 ] && [ "$tn" -eq 0 ]; then
             echo "private-name-guard: clean"
             exit 0
           fi
@@ -504,5 +643,13 @@ jobs:
             f=${coord%:*}; l=${coord##*:}
             echo "::$lvl file=${f#./},line=$l,title=private-name-guard::this line names a private repository"
           done < "$ctl/findings"
-          echo "private-name-guard: $n location(s) name a private repository"
+          while IFS= read -r coord; do
+            f=${coord%:*}; l=${coord##*:}
+            b=$(basename "$f")
+            case "$b" in
+              commit-*) echo "::$lvl title=private-name-guard::commit ${b#commit-} line $l names a private repository in its MESSAGE. Amend it -- a merged commit message cannot be changed without rewriting history." ;;
+              *)        echo "::$lvl title=private-name-guard::this pull request's ${b//-/ } names a private repository at line $l. Edit it." ;;
+            esac
+          done < "$ctl/text-findings"
+          echo "private-name-guard: $n tree location(s) and $tn text location(s) name a private repository"
           [ "$lvl" = warning ] || exit 1

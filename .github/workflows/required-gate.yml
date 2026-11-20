@@ -41,6 +41,10 @@ jobs:
   private-name-guard:
     name: Private-name guard
     uses: ./.github/workflows/private-name-guard.yml
+    with:
+      # Dogfood the text scan here first. This repo is where the two historical
+      # disclosures landed, and where the guard itself is developed.
+      scan-text: true
     secrets:
       PRIVATE_NAME_GUARD_TOKEN: ${{ secrets.PRIVATE_NAME_GUARD_TOKEN }}
 
