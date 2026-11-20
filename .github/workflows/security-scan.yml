@@ -293,15 +293,50 @@ jobs:
           git rev-parse --git-dir > /dev/null
           # --exit-code 2 separates the two outcomes that both default to 1:
           # 2 = secrets found, 1 = gitleaks itself failed to run.
-          ./gitleaks git . --no-banner --redact --exit-code 2 || {
+          #
+          # The findings go to a JSON REPORT, not to stdout. Measured: on a
+          # failing run this job printed `leaks found: 11` and nothing else --
+          # no file, no line, no commit, no rule -- so the gate failed with
+          # nothing to act on.
+          #
+          # --verbose would fix that and must not be used here. This workflow is
+          # called by public repositories, whose logs are world-readable, and a
+          # line naming the file and rule is a signpost to the secret even with
+          # the value redacted. An artifact is readable only by people who can
+          # already see the repository, which is the correct audience.
+          #
+          # --redact stays on regardless, so no value reaches the report either.
+          ./gitleaks git . --no-banner --redact --exit-code 2 \
+            --report-format json --report-path gitleaks-report.json || {
             rc=$?
             if [ "$rc" -eq 2 ]; then
-              echo "::error::gitleaks found secrets in git history — see the log above."
+              n=$(python3 -c 'import json,sys;print(len(json.load(open("gitleaks-report.json"))))' 2>/dev/null || echo "?")
+              echo "::error::gitleaks found $n secret(s) in git history. Values are redacted everywhere; download the gitleaks-report artifact on this run for the file, line, commit and rule of each."
+              {
+                echo "## gitleaks"
+                echo
+                echo "**$n** finding(s) in git history. Values are redacted; the"
+                echo "\`gitleaks-report\` artifact on this run has file, line, commit and rule"
+                echo "for each."
+                echo
+                echo "> A finding is in HISTORY. Deleting the file does not remove it, and if"
+                echo "> the value is real it must be ROTATED, not just removed."
+              } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
             else
               echo "::error::gitleaks failed to run (exit $rc); this is a tool/config failure, not a clean scan."
             fi
             exit "$rc"
           }
+
+      # always(): the run that FOUND something is exactly the run whose report
+      # is needed, and that run has already failed by this point.
+      - name: Upload the gitleaks report
+        if: always() && hashFiles('gitleaks-report.json') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
+          retention-days: 7
 
   # ── OSV-Scanner ───────────────────────────────────────────────────────────
   osv-scanner:
