@@ -262,6 +262,7 @@ jobs:
           # that is sitting in history.
           fetch-depth: 0
       - name: Install + run gitleaks
+        id: gitleaks
         shell: bash
         env:
           # Bump both together; the checksum is from the release's own
@@ -293,15 +294,102 @@ jobs:
           git rev-parse --git-dir > /dev/null
           # --exit-code 2 separates the two outcomes that both default to 1:
           # 2 = secrets found, 1 = gitleaks itself failed to run.
-          ./gitleaks git . --no-banner --redact --exit-code 2 || {
+          #
+          # The findings go to a JSON REPORT, not to stdout. Measured: on a
+          # failing run this job printed `leaks found: 11` and nothing else --
+          # no file, no line, no commit, no rule -- so the gate failed with
+          # nothing to act on.
+          #
+          # --verbose would fix that and must not be used here. This workflow is
+          # called by public repositories, whose logs are world-readable, and a
+          # line naming the file and rule is a signpost to the secret even with
+          # the value redacted. An artifact is readable only by people who can
+          # already see the repository, which is the correct audience.
+          #
+          # --redact masks Secret, Match and Line. It does NOT mask Message,
+          # which carries the whole commit message -- so a credential repeated
+          # in a commit message would ship in the artifact in plain text
+          # (measured on 8.30.1). A later step rebuilds the report from an
+          # allowlist of fields, so the upload never carries free text.
+          ./gitleaks git . --no-banner --redact --exit-code 2 \
+            --report-format json --report-path gitleaks-raw.json || {
             rc=$?
             if [ "$rc" -eq 2 ]; then
-              echo "::error::gitleaks found secrets in git history — see the log above."
+              n=$(python3 -c 'import json;print(len(json.load(open("gitleaks-raw.json"))))' 2>/dev/null || echo "?")
+              # Set BEFORE exiting: the upload step keys off this, not off the
+              # mere existence of a report file. A clean scan still writes the
+              # file (as an empty list), so file-existence uploads on every
+              # clean run.
+              echo "found=true" >> "$GITHUB_OUTPUT"
+              echo "::error::gitleaks found $n secret(s) in git history. Download the gitleaks-report artifact on this run for the file, line, commit and rule of each; secret values and commit messages are stripped from it."
+              {
+                echo "## gitleaks"
+                echo
+                echo "**$n** finding(s) in git history. The \`gitleaks-report\`"
+                echo "artifact on this run has the file, line, commit and rule for each;"
+                echo "secret values and commit messages are stripped from it."
+                echo
+                echo "> A finding is in HISTORY. Deleting the file does not remove it, and if"
+                echo "> the value is real it must be ROTATED, not just removed."
+              } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
             else
               echo "::error::gitleaks failed to run (exit $rc); this is a tool/config failure, not a clean scan."
             fi
             exit "$rc"
           }
+
+      # Rebuild the report from an ALLOWLIST. A denylist that drops today's
+      # Message would not stop a future gitleaks version adding another
+      # free-text field, and this artifact is produced for public repositories.
+      - name: Strip free text from the gitleaks report
+        id: sanitise
+        if: always() && steps.gitleaks.outputs.found == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Remove the destination first. upload-artifact follows symbolic
+          # links, so a `gitleaks-report.json` symlink committed to the tree
+          # under scan would otherwise make the write land somewhere else and
+          # the upload publish that target instead of this projection. `rm -f`
+          # unlinks the symlink itself, not whatever it points at.
+          rm -f gitleaks-report.json
+          python3 - <<'PY'
+          import json
+          KEEP = ("File", "StartLine", "EndLine", "StartColumn", "EndColumn",
+                  "Commit", "RuleID", "Description", "Date", "Fingerprint",
+                  "Entropy", "Tags", "SymlinkFile")
+          raw = json.load(open("gitleaks-raw.json"))
+          json.dump([{k: f[k] for k in KEEP if k in f} for f in raw],
+                    open("gitleaks-report.json", "w"), indent=2)
+          print(f"rewrote {len(raw)} finding(s) keeping {len(KEEP)} fields")
+          PY
+
+      # Separate, and always(): the raw report holds unredacted commit
+      # messages, and it must go even on the paths where no sanitised report
+      # is produced -- gitleaks writes its report BEFORE it returns a scan
+      # error, so an exit code of 1 can leave partial findings behind with
+      # `found` never set, and `set -euo pipefail` would abort the step above
+      # before any cleanup of its own could run.
+      - name: Remove the unredacted gitleaks report
+        if: always()
+        shell: bash
+        run: rm -f gitleaks-raw.json
+
+      # always(): the run that FOUND something is exactly the run whose report
+      # is needed, and that run has already failed by this point. The condition
+      # is the step output, not hashFiles(): gitleaks writes the report file
+      # before it decides the exit code, so a clean scan leaves an empty list
+      # behind and file-existence would upload an artifact on every clean run.
+      # Also gated on the sanitiser having SUCCEEDED, not merely on findings
+      # existing. If the projection fails, there is no vetted report to
+      # publish, and uploading anyway is how the unredacted copy would escape.
+      - name: Upload the gitleaks report
+        if: always() && steps.gitleaks.outputs.found == 'true' && steps.sanitise.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
+          retention-days: 7
 
   # ── OSV-Scanner ───────────────────────────────────────────────────────────
   osv-scanner:
