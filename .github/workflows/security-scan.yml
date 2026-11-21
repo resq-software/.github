@@ -342,10 +342,17 @@ jobs:
       # Message would not stop a future gitleaks version adding another
       # free-text field, and this artifact is produced for public repositories.
       - name: Strip free text from the gitleaks report
+        id: sanitise
         if: always() && steps.gitleaks.outputs.found == 'true'
         shell: bash
         run: |
           set -euo pipefail
+          # Remove the destination first. upload-artifact follows symbolic
+          # links, so a `gitleaks-report.json` symlink committed to the tree
+          # under scan would otherwise make the write land somewhere else and
+          # the upload publish that target instead of this projection. `rm -f`
+          # unlinks the symlink itself, not whatever it points at.
+          rm -f gitleaks-report.json
           python3 - <<'PY'
           import json
           KEEP = ("File", "StartLine", "EndLine", "StartColumn", "EndColumn",
@@ -356,17 +363,28 @@ jobs:
                     open("gitleaks-report.json", "w"), indent=2)
           print(f"rewrote {len(raw)} finding(s) keeping {len(KEEP)} fields")
           PY
-          # Self-hosted runners reuse the workspace; do not leave the unredacted
-          # copy lying about between jobs.
-          rm -f gitleaks-raw.json
+
+      # Separate, and always(): the raw report holds unredacted commit
+      # messages, and it must go even on the paths where no sanitised report
+      # is produced -- gitleaks writes its report BEFORE it returns a scan
+      # error, so an exit code of 1 can leave partial findings behind with
+      # `found` never set, and `set -euo pipefail` would abort the step above
+      # before any cleanup of its own could run.
+      - name: Remove the unredacted gitleaks report
+        if: always()
+        shell: bash
+        run: rm -f gitleaks-raw.json
 
       # always(): the run that FOUND something is exactly the run whose report
       # is needed, and that run has already failed by this point. The condition
       # is the step output, not hashFiles(): gitleaks writes the report file
       # before it decides the exit code, so a clean scan leaves an empty list
       # behind and file-existence would upload an artifact on every clean run.
+      # Also gated on the sanitiser having SUCCEEDED, not merely on findings
+      # existing. If the projection fails, there is no vetted report to
+      # publish, and uploading anyway is how the unredacted copy would escape.
       - name: Upload the gitleaks report
-        if: always() && steps.gitleaks.outputs.found == 'true'
+        if: always() && steps.gitleaks.outputs.found == 'true' && steps.sanitise.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: gitleaks-report
