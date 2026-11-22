@@ -146,7 +146,26 @@ findings and fixes:
 - **template-injection** — Never interpolate `${{ github.event.* }}` into
   `run:` blocks. Pass via `env:` instead.
 - **dangerous-triggers** — `pull_request_target` + checkout of PR head is
-  dangerous. Use `pull_request` or a two-stage workflow.
+  dangerous for one specific reason: the secret is live while untrusted files
+  are on disk, so any step that *executes* one of them hands the token to
+  whoever opened the pull request. Prefer `pull_request` and let the job fail
+  closed on forks.
+
+  This entry used to say "use `pull_request` or a two-stage workflow". The
+  second half was wrong and is corrected here: `workflow_run` trips the *same*
+  rule at the *same* severity — measured with zizmor v1.32.0, which calls it
+  `almost always used insecurely` in the same words — so a
+  `pull_request` → `workflow_run` split relocates the finding instead of
+  removing it, while adding artifact plumbing, a `statuses: write` grant, and a
+  stage that must not believe an artifact's own claim about which commit it came
+  from. There is no arrangement of triggers that reads a fork's tree with a
+  secret in scope and comes out clean.
+
+  So where a fork genuinely must be read, the finding is answered rather than
+  avoided: suppress it in the file, immediately next to a written argument that
+  nothing downstream of the checkout executes the tree, and keep the job
+  read-only. `private-name-guard-fork.yml` is the worked example — three steps,
+  one of which is a grep.
 - **unpinned-uses** — `@main`/`@master`/`@v4` tags can be moved. Pin to a
   commit SHA with a trailing `# <tag>` comment.
 - **excessive-permissions** — Tighten the top-level `permissions:` block;

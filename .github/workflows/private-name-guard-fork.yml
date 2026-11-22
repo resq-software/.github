@@ -1,0 +1,114 @@
+# Copyright 2026 ResQ Systems, Inc.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Runs the private-name guard against a FORK pull request's commit.
+#
+# WHY A SECOND CALLER EXISTS
+# required-gate.yml calls the same guard on `pull_request`. That event gives a
+# fork no access to secrets, so the guard cannot read the organisation's
+# repository list and correctly refuses to report on a tree it could not
+# assess. The result is that every fork pull request is red for a reason that
+# has nothing to do with its contents, and a maintainer has to re-push the
+# branch into this repository to learn anything.
+#
+# `pull_request_target` runs in the BASE repository's context: this file, the
+# guard it calls and every matcher inside it are read from the base branch, and
+# the secret resolves. Pointing it at the pull request's head commit scans the
+# contributor's tree with the maintainer's token.
+#
+# WHY THAT IS SAFE HERE, AND WHY IT IS NOT A PATTERN TO COPY
+# `pull_request_target` with a head checkout is the classic token-exfiltration
+# shape: the token is live while untrusted files are on disk, so any step that
+# EXECUTES one of those files hands the token to whoever opened the pull
+# request. This caller is safe only because nothing downstream of the checkout
+# executes anything from the tree -- the guard greps files and reads commit
+# messages with `git log`, and the strings a contributor controls reach the
+# script through env and are read as "$VAR" rather than interpolated.
+#
+# So the safety is a property of THIS job's steps, not of the trigger. Adding a
+# build, a dependency install, a code generator, a linter that loads project
+# config, or any action resolved from the head repository would break it, and
+# the break would be silent. Do not extend this file; add a `pull_request`
+# caller instead and let it fail closed on forks the way the gate does.
+#
+# PERMISSIONS: read-only, deliberately. `pull_request_target` would happily
+# grant `pull-requests: write`, which is why so many of these workflows post a
+# comment -- and a write-capable token in a run with untrusted files on disk is
+# worth strictly more to an attacker than a read-only one. This job reports
+# through the check and the job summary, which need nothing.
+#
+# ZIZMOR: this file trips `dangerous-triggers` (high severity) and the
+# suppression below is deliberate. .github/workflows/README.md used to answer
+# that finding with "use `pull_request` or a two-stage workflow", and neither
+# half of that holds here: `pull_request` is precisely the event that cannot
+# read the secret, which is the whole problem, and a two-stage
+# `pull_request` -> `workflow_run` split trips the SAME rule at the SAME
+# severity -- measured with zizmor v1.32.0, which reports `workflow_run is
+# almost always used insecurely` in exactly the same words. So the finding
+# cannot be designed away, only answered; the two-stage version would answer it
+# with strictly more machinery (artifact plumbing, a `statuses: write` grant,
+# and a stage that must not believe the artifact's own claim about which commit
+# it came from).
+#
+# What actually discharges the finding is the paragraph above: the token is live
+# while untrusted files are on disk, and nothing executes them. That is the
+# mitigation zizmor's own documentation asks for, and it is checkable by reading
+# this job's steps -- there are three, and one of them is a grep.
+#
+# STATUS: ADVISORY. This context is not in the `default-branch-baseline`
+# ruleset, so a fork pull request still cannot merge on the strength of it --
+# `required` from required-gate.yml continues to fail closed on forks. What
+# changes is that the fork's tree is now actually read, and the maintainer sees
+# a verdict instead of "NOT ASSESSED".
+#
+# Promoting it to a required context is a separate decision with one thing that
+# has to be measured first: whether a check produced by `pull_request_target`
+# is attached to the pull request's HEAD commit (where a required status check
+# is evaluated) or to the base commit it ran against. If it lands on the base
+# commit it can never satisfy a required check, and the gate has to learn the
+# verdict another way. That is a question about GitHub's behaviour, not about
+# this file, and it is answerable on the first real fork pull request. Until it
+# is answered, making this context required risks either a permanently pending
+# check or -- if a skipped job counts as a pass, as it does for some check
+# types -- a gate that reports success on same-repo pull requests without
+# having run. Neither is acceptable in a guard whose entire purpose is to
+# refuse to be falsely green.
+
+name: private-name-guard-fork
+
+on:
+  # See the ZIZMOR note above. Suppressed, not silenced: the reasoning is in
+  # this file and the alternative the rule suggests trips the same rule.
+  pull_request_target:  # zizmor: ignore[dangerous-triggers]
+
+# Read-only. See PERMISSIONS above -- this is the ceiling for the called
+# workflow too, so it cannot widen it.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: Private-name guard (fork)
+    # Same-repo pull requests are already scanned by required-gate.yml on
+    # `pull_request`, where the guard runs from the pull request's OWN copy of
+    # the workflow and so tests changes to the guard itself. Running both would
+    # scan those trees twice and, worse, would mean the base copy silently
+    # shadowed the copy under review.
+    if: github.event.pull_request.head.repo.fork
+    uses: ./.github/workflows/private-name-guard.yml
+    with:
+      # Pinned to the commit, never to the branch name: the name would
+      # re-resolve when checkout runs, so a push landing between this verdict
+      # and the merge would ride past a green check computed over a different
+      # tree. The guard rejects anything that is not a 40-character SHA.
+      ref: ${{ github.event.pull_request.head.sha }}
+      # The same two surfaces the gate scans on same-repo pull requests. The
+      # payload is identical on this event, so title, body and the commit
+      # messages of base..head are all readable.
+      scan-text: true
+    secrets:
+      PRIVATE_NAME_GUARD_TOKEN: ${{ secrets.PRIVATE_NAME_GUARD_TOKEN }}

@@ -85,8 +85,24 @@
 # Without it the enumeration returns
 # zero names and EVERY tree looks clean, which is the exact false-assurance
 # mode this guard exists to prevent, so a zero enumeration FAILS LOUDLY and
-# never passes. For the same reason a pull request from a fork, which cannot
-# read secrets, fails as NOT ASSESSED rather than passing.
+# never passes.
+#
+# FORKS. A `pull_request` event from a fork cannot read secrets at all, so on
+# that event the list is unavailable and the tree fails as NOT ASSESSED rather
+# than passing. The token is what is missing, not the fork -- so the way to
+# scan a fork is to run this workflow from a `pull_request_target` caller,
+# which executes in the BASE repository's context and can read the secret, and
+# to point it at the fork's commit with the `ref` input.
+#
+# That is safe here for a reason specific to this job and not transferable to
+# others: after checkout, nothing from the fork is installed, built, executed
+# or evaluated. The tree is read by `grep` and the pull-request text by
+# `git log`, every matcher comes from this file on the base branch, and the
+# attacker-controlled strings are forwarded through env and read as "$VAR". A
+# caller that adds any step which runs code out of the checked-out tree -- a
+# package install, a build, a generator, an action resolved from the head repo
+# -- hands PRIVATE_NAME_GUARD_TOKEN to the fork, and the fact that this file
+# is safe to call that way is not a property that step would inherit.
 #
 # MATCH TIERS
 #   qualified  Always checked, case-insensitive (GitHub resolves repo names
@@ -176,6 +192,24 @@ on:
         type: boolean
         required: false
         default: false
+      ref:
+        description: >
+          Commit to scan. Forwarded to actions/checkout. Defaults empty, which
+          leaves checkout to pick whatever the event would check out anyway, so
+          an existing caller that does not set this sees no change.
+
+          Must be a full 40-character commit SHA, and the job refuses to run on
+          anything else. In practice that means
+          `github.event.pull_request.head.sha` from a `pull_request_target`
+          caller. A branch name would re-resolve at the moment checkout runs,
+          which opens a window between the verdict and the merge: a push landing
+          in it would be carried past a green check that was never computed over
+          it. A SHA cannot move, so there is no window. The restriction is
+          enforced rather than documented because a name here fails open -- the
+          scan still runs, still reports, and reports about the wrong tree.
+        type: string
+        required: false
+        default: ""
     secrets:
       PRIVATE_NAME_GUARD_TOKEN:
         description: "Fine-grained org-wide token: Metadata: Read + Organization administration: Read, and nothing else. Narrow by design -- do not pass the sweep's broader secret. Required in practice."
@@ -195,10 +229,38 @@ jobs:
         with:
           egress-policy: audit
 
+      # Before checkout, because an unpinned ref is only useful to catch while
+      # it can still stop the scan rather than mislabel it.
+      - name: Require a pinned commit
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          set -eu
+          # Empty is the documented default: checkout then does whatever the
+          # event would have done, and there is nothing to pin.
+          if [ -z "${REF:-}" ]; then
+            echo "no ref input -- checkout will use this event's default"
+            exit 0
+          fi
+          ok=yes
+          case "$REF" in *[!0-9a-fA-F]*) ok=no ;; esac
+          [ "${#REF}" -eq 40 ] || ok=no
+          if [ "$ok" != yes ]; then
+            echo "::error title=private-name-guard::the ref input must be a full 40-character commit SHA. A branch or tag name re-resolves at the moment checkout runs, so a push landing between this verdict and the merge would be carried past a green check computed over a different tree; a short SHA is ambiguous. Pass github.event.pull_request.head.sha."
+            exit 1
+          fi
+          echo "scanning a pinned commit"
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+          # Empty means "whatever this event checks out by default", so callers
+          # that do not set it are unaffected. A `pull_request_target` caller
+          # sets it to the pull request's head SHA; GitHub serves a fork's head
+          # commit from the base repository, so no `repository:` override is
+          # needed and none is given -- the checkout stays in the base repo.
+          ref: ${{ inputs.ref }}
           # Full history only when the text scan needs it, because reading the
           # commit messages a pull request adds requires both endpoints of
           # base..head to be present. A shallow clone has neither.
@@ -238,8 +300,15 @@ jobs:
           # Every branch below fails. None of them can pass, because each one
           # means the private-repo list is unavailable, and an empty list
           # makes every tree look clean.
-          if [ "${IS_FORK:-false}" = "true" ]; then
-            echo "::error title=private-name-guard::fork pull requests cannot read PRIVATE_NAME_GUARD_TOKEN, so the private-repo list is unavailable and this tree was NOT ASSESSED. Re-run from a branch in this repository."
+          # A fork is not in itself a reason to refuse; a missing list is, and
+          # that is checked below for every event alike. This branch exists only
+          # to say which of the two is true, because "no token" sends a reader to
+          # the settings page while the actual fix is a different trigger. It
+          # therefore tests the token as well -- a `pull_request_target` caller
+          # on this same fork pull request DOES hold the secret, and must be
+          # allowed to proceed and return a real verdict.
+          if [ "${IS_FORK:-false}" = "true" ] && [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error title=private-name-guard::this is a fork pull request on an event that cannot read PRIVATE_NAME_GUARD_TOKEN, so the private-repo list is unavailable and this tree was NOT ASSESSED. Scan it from a pull_request_target caller, which runs in the base repository's context and can read the secret, passing ref: github.event.pull_request.head.sha. Re-pushing the branch into this repository also works."
             exit 1
           fi
 
@@ -510,7 +579,14 @@ jobs:
           text_scanned=no
           : > "$ctl/text-findings"
           if [ "${SCAN_TEXT:-false}" = "true" ]; then
-            if [ "${EVENT_NAME:-}" != "pull_request" ]; then
+            # `pull_request_target` counts. It is a different trigger but the
+            # same payload: `github.event.pull_request` is fully populated, so
+            # the title, the body and both endpoints of base..head are all
+            # readable, and treating it as "no pull request to read" would
+            # silently drop the text scan on exactly the fork path this input
+            # was added to cover.
+            if [ "${EVENT_NAME:-}" != "pull_request" ] \
+               && [ "${EVENT_NAME:-}" != "pull_request_target" ]; then
               # Not an error: there is genuinely no pull request to read. But it
               # is not a clean result either, and the summary must not imply one.
               text_scanned=no
