@@ -18,7 +18,15 @@
 name: required-gate
 
 on:
+  # `edited` is not a default activity type. The private-name guard's text scan
+  # reads the pull request TITLE and BODY, and this file's own header notes
+  # that a squash commit message is built from them -- so without `edited` a
+  # title or body changed after a green verdict is never re-read, and the
+  # guarantee "both are scanned on the pull request itself" does not hold. The
+  # cost is a gate re-run on description edits, which is the right trade for a
+  # surface that reaches the default branch verbatim.
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 

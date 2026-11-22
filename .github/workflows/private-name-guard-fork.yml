@@ -70,6 +70,14 @@ on:
   # CodeQL, which keys on the untrusted checkout this workflow does not perform.
   # See .github/workflows/README.md under `dangerous-triggers`.
   pull_request_target:  # zizmor: ignore[dangerous-triggers]
+    # `edited` is not a default activity type, and leaving it out would make
+    # this guard's own documented guarantee false. The text scan reads the
+    # pull request TITLE and BODY, and a squash commit message is built from
+    # them -- so without `edited`, a title changed after a green verdict is
+    # never re-read and rides into the default branch unscanned. It also means
+    # a contributor who fixes a flagged title has no way to clear the check
+    # without an unrelated push.
+    types: [opened, synchronize, reopened, edited]
 
 # Read-only, and the ceiling for the called workflow too, so it cannot widen it.
 permissions:
