@@ -18,7 +18,15 @@
 name: required-gate
 
 on:
+  # `edited` is not a default activity type. The private-name guard's text scan
+  # reads the pull request TITLE and BODY, and this file's own header notes
+  # that a squash commit message is built from them -- so without `edited` a
+  # title or body changed after a green verdict is never re-read, and the
+  # guarantee "both are scanned on the pull request itself" does not hold. The
+  # cost is a gate re-run on description edits, which is the right trade for a
+  # surface that reaches the default branch verbatim.
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
@@ -44,6 +52,32 @@ jobs:
     with:
       # Dogfood the text scan here first. This repo is where the two historical
       # disclosures landed, and where the guard itself is developed.
+      scan-text: true
+    secrets:
+      PRIVATE_NAME_GUARD_TOKEN: ${{ secrets.PRIVATE_NAME_GUARD_TOKEN }}
+
+  # Exercises the `fetch-commit` path that private-name-guard-fork.yml depends
+  # on. That caller only fires on fork pull requests, and this repository has
+  # never received one, so without this job the fetch/unpack/scan/read-commit-
+  # messages-over-the-API mechanism would first run in anger on a contributor's
+  # pull request. Here it runs on every pull request, against that pull
+  # request's own head commit, so a regression surfaces on our own changes.
+  #
+  # Deliberately NOT in `required`'s needs below. The fork check this backs is
+  # itself advisory, and gating this repository on the path would be a stricter
+  # promise than the thing the path serves.
+  #
+  # Skipped on forks: a fork `pull_request` has no secret, so this job would
+  # fail for the same reason the gate's own guard job does, and the fork caller
+  # is what covers that case.
+  private-name-guard-fetch:
+    name: Private-name guard (fetch mode)
+    if: >-
+      github.event_name == 'pull_request'
+      && !github.event.pull_request.head.repo.fork
+    uses: ./.github/workflows/private-name-guard.yml
+    with:
+      fetch-commit: ${{ github.event.pull_request.head.sha }}
       scan-text: true
     secrets:
       PRIVATE_NAME_GUARD_TOKEN: ${{ secrets.PRIVATE_NAME_GUARD_TOKEN }}

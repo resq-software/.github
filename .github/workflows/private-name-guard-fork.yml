@@ -1,0 +1,112 @@
+# Copyright 2026 ResQ Systems, Inc.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Runs the private-name guard against a FORK pull request's commit.
+#
+# WHY THIS EXISTS
+# required-gate.yml calls the same guard on `pull_request`. That event gives a
+# fork no access to secrets, so the guard cannot read the organisation's
+# repository list and correctly refuses to report on a tree it could not
+# assess. Every fork pull request was therefore red for a reason unrelated to
+# its contents, and the only way to get a verdict was to re-push the branch
+# into this repository.
+#
+# Reading the list needs a privileged event, so this one is privileged. What it
+# does NOT do is check the contributor's commit out. It passes `fetch-commit`,
+# and the guard fetches that commit from the API as a tarball instead. The
+# reasoning for that, in both directions, is on the `fetch-commit` input in
+# private-name-guard.yml; in short:
+#
+#   * `actions/checkout` of a contributor's ref inside a privileged job is what
+#     CodeQL `actions/untrusted-checkout` flags, and it flags the arrangement
+#     rather than what the job does next -- so "nothing here executes the tree"
+#     would only ever be grounds to DISMISS that alert. Fetching the bytes is a
+#     different arrangement and the alert does not arise.
+#
+#   * The bytes must come from GitHub rather than from an unprivileged stage.
+#     On a fork `pull_request` event the workflow definition comes from the pull
+#     request's own merge ref, so a fork controls what such a stage uploads and
+#     could hand over a sanitised tree. That is why this is not the usual
+#     two-stage artifact hand-off: for a guard, the hand-off IS the hole.
+#
+# PERMISSIONS: `contents: read` and nothing else. That is what the tarball fetch
+# and the commit-message reads need, both of which use the repository's own
+# GITHUB_TOKEN rather than the guard secret -- the guard secret deliberately
+# carries no Contents: Read and must not start carrying it for this. No
+# `pull-requests: write`: a write-capable token on a privileged event is worth
+# strictly more to an attacker, and this job reports through its check and job
+# summary, which need nothing.
+#
+# STATUS: ADVISORY. This context is not in the `default-branch-baseline`
+# ruleset, so a fork pull request still cannot merge on the strength of it --
+# `required` from required-gate.yml continues to fail closed on forks. What
+# changes is that the fork's tree is now read, and a maintainer sees a verdict
+# instead of "NOT ASSESSED".
+#
+# Promoting it to a required context needs one fact that cannot be established
+# from this repository, which has never received a fork pull request: whether a
+# check produced by a privileged pull-request event attaches to the pull
+# request's HEAD commit, where a required status check is evaluated, or to the
+# base commit the run was triggered against. If it is the base commit it can
+# never satisfy a required check and the gate must learn the verdict another
+# way. Making this required before that is known risks either a permanently
+# pending check or a gate that reports success without having run, and neither
+# is acceptable in a guard whose purpose is to refuse to be falsely green.
+#
+# TESTING: there is no fork pull request to exercise this on, so the mechanism
+# it depends on -- fetch, unpack, scan, read commit messages over the API -- is
+# exercised on every pull request to this repository instead, by the
+# `private-name-guard-fetch` job in required-gate.yml. That job runs the same
+# `fetch-commit` path against a same-repo commit, so a regression in it surfaces
+# here rather than on a contributor's first pull request.
+
+name: private-name-guard-fork
+
+on:
+  # zizmor flags this trigger, and the finding is answered rather than silenced.
+  # It flags `workflow_run` identically (measured, v1.32.0), so no arrangement
+  # of triggers that can read the secret is quiet -- which makes zizmor the
+  # wrong signal to choose the design on. The signal that did decide it was
+  # CodeQL, which keys on the untrusted checkout this workflow does not perform.
+  # See .github/workflows/README.md under `dangerous-triggers`.
+  pull_request_target:  # zizmor: ignore[dangerous-triggers]
+    # `edited` is not a default activity type, and leaving it out would make
+    # this guard's own documented guarantee false. The text scan reads the
+    # pull request TITLE and BODY, and a squash commit message is built from
+    # them -- so without `edited`, a title changed after a green verdict is
+    # never re-read and rides into the default branch unscanned. It also means
+    # a contributor who fixes a flagged title has no way to clear the check
+    # without an unrelated push.
+    types: [opened, synchronize, reopened, edited]
+
+# Read-only, and the ceiling for the called workflow too, so it cannot widen it.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: Private-name guard (fork)
+    # Same-repo pull requests are scanned by required-gate.yml on
+    # `pull_request`, where the guard runs from the pull request's OWN copy and
+    # so tests changes to the guard itself. Running both would scan those trees
+    # twice and, worse, would let the base copy silently shadow the copy under
+    # review.
+    if: github.event.pull_request.head.repo.fork
+    uses: ./.github/workflows/private-name-guard.yml
+    with:
+      # Pinned to the commit, never to the branch name: a name re-resolves when
+      # the fetch runs, so a push landing between this verdict and the merge
+      # would ride past a green check computed over a different tree. The guard
+      # rejects anything that is not a 40-character SHA.
+      fetch-commit: ${{ github.event.pull_request.head.sha }}
+      # The same two surfaces the gate scans on same-repo pull requests. The
+      # payload is identical on this event, so the title and body are readable
+      # from it, and the commit messages come from the pull request's commits
+      # endpoint because fetch mode has no git repository to read them from.
+      scan-text: true
+    secrets:
+      PRIVATE_NAME_GUARD_TOKEN: ${{ secrets.PRIVATE_NAME_GUARD_TOKEN }}

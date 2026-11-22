@@ -146,7 +146,40 @@ findings and fixes:
 - **template-injection** — Never interpolate `${{ github.event.* }}` into
   `run:` blocks. Pass via `env:` instead.
 - **dangerous-triggers** — `pull_request_target` + checkout of PR head is
-  dangerous. Use `pull_request` or a two-stage workflow.
+  dangerous for one specific reason: the secret is live while untrusted files
+  are on disk, so any step that *executes* one of them hands the token to
+  whoever opened the pull request. Prefer `pull_request` and let the job fail
+  closed on forks.
+
+  Where a privileged event genuinely must read a fork's tree, three
+  measurements settle the design, and the obvious answer is the wrong one:
+
+  - **zizmor treats every such trigger alike.** `workflow_run` trips this same
+    rule at the same severity — v1.32.0 calls it `almost always used
+    insecurely` in the same words as `pull_request_target`. No trigger that can
+    read a secret is quiet, so zizmor cannot be the deciding signal.
+  - **CodeQL keys on the untrusted checkout, not the trigger.**
+    `actions/untrusted-checkout/high` fires on the *combination* — an untrusted
+    checkout inside a privileged job — and on nothing the job does afterwards.
+    So "nothing here executes the tree" is grounds to *dismiss* that alert, not
+    to resolve it.
+  - **The usual two-stage artifact hand-off does not work for a security
+    check.** On a fork `pull_request` event the workflow definition comes from
+    the pull request's own merge ref, so the fork controls what an unprivileged
+    stage uploads. It can hand a sanitised tree to the privileged stage, which
+    then reports green on content the contributor chose. For a workflow that
+    posts lint results that is harmless. For a gate, the hand-off is the hole.
+
+  What satisfies all three is to keep the untrusted bytes out of a checkout
+  *and* out of the contributor's hands: have the privileged job **fetch the
+  commit from the API** as a tarball, keyed by a SHA taken from the event
+  payload, and read the extract as data. Nothing is cloned, no credential is
+  persisted, there is no checked-out script or git hook to invoke, and the bytes
+  come from GitHub rather than from a stage the fork can rewrite. CodeQL raises
+  nothing; zizmor's trigger finding remains and is suppressed in the file next
+  to this reasoning. `private-name-guard.yml`'s `fetch-commit` input and
+  `private-name-guard-fork.yml` are the worked example.
+
 - **unpinned-uses** — `@main`/`@master`/`@v4` tags can be moved. Pin to a
   commit SHA with a trailing `# <tag>` comment.
 - **excessive-permissions** — Tighten the top-level `permissions:` block;
