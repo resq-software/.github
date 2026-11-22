@@ -151,27 +151,34 @@ findings and fixes:
   whoever opened the pull request. Prefer `pull_request` and let the job fail
   closed on forks.
 
-  Two measurements, because the obvious reading of this rule is half wrong and
-  the other half matters more than it looks:
+  Where a privileged event genuinely must read a fork's tree, three
+  measurements settle the design, and the obvious answer is the wrong one:
 
-  - **zizmor treats both triggers alike.** `workflow_run` trips this same rule
-    at the same severity — v1.32.0 calls it `almost always used insecurely` in
-    the same words. So moving to two stages does not make zizmor quiet.
-  - **CodeQL does not.** `actions/untrusted-checkout/high` fires on the
-    *combination* — an untrusted checkout inside a **privileged** job — not on
-    the trigger. Split the work so the untrusted checkout happens in an
-    unprivileged `pull_request` stage and only the privileged stage holds the
-    secret, and the high-severity finding is genuinely gone rather than
-    suppressed.
+  - **zizmor treats every such trigger alike.** `workflow_run` trips this same
+    rule at the same severity — v1.32.0 calls it `almost always used
+    insecurely` in the same words as `pull_request_target`. No trigger that can
+    read a secret is quiet, so zizmor cannot be the deciding signal.
+  - **CodeQL keys on the untrusted checkout, not the trigger.**
+    `actions/untrusted-checkout/high` fires on the *combination* — an untrusted
+    checkout inside a privileged job — and on nothing the job does afterwards.
+    So "nothing here executes the tree" is grounds to *dismiss* that alert, not
+    to resolve it.
+  - **The usual two-stage artifact hand-off does not work for a security
+    check.** On a fork `pull_request` event the workflow definition comes from
+    the pull request's own merge ref, so the fork controls what an unprivileged
+    stage uploads. It can hand a sanitised tree to the privileged stage, which
+    then reports green on content the contributor chose. For a workflow that
+    posts lint results that is harmless. For a gate, the hand-off is the hole.
 
-  That second point is the one to design against, so where a fork's tree must
-  be read with a secret in scope, **use the two-stage split** and accept the
-  cost: artifact plumbing, a `statuses: write` grant on the privileged stage,
-  and the rule that the privileged stage must never believe an artifact's own
-  claim about which commit it came from. A single-stage `pull_request_target`
-  that checks out the head gets a high CodeQL alert that can only be dismissed,
-  not resolved, and two independent scanners plus this entry all pointing the
-  same way is not a consensus worth overriding with a suppression.
+  What satisfies all three is to keep the untrusted bytes out of a checkout
+  *and* out of the contributor's hands: have the privileged job **fetch the
+  commit from the API** as a tarball, keyed by a SHA taken from the event
+  payload, and read the extract as data. Nothing is cloned, no credential is
+  persisted, there is no checked-out script or git hook to invoke, and the bytes
+  come from GitHub rather than from a stage the fork can rewrite. CodeQL raises
+  nothing; zizmor's trigger finding remains and is suppressed in the file next
+  to this reasoning. `private-name-guard.yml`'s `fetch-commit` input and
+  `private-name-guard-fork.yml` are the worked example.
 
 - **unpinned-uses** — `@main`/`@master`/`@v4` tags can be moved. Pin to a
   commit SHA with a trailing `# <tag>` comment.

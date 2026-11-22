@@ -104,16 +104,25 @@
 # strings are forwarded through env and read as "$VAR") is true, and it is still
 # only an argument for DISMISSING that alert rather than resolving it.
 #
-# The arrangement that resolves it splits the two halves across a trust
-# boundary: an unprivileged `pull_request` stage checks out the fork and hands
-# the tree on as data, and a privileged stage holds the token and never checks
-# out anything untrusted. See .github/workflows/README.md under
-# `dangerous-triggers` for the two scanner measurements behind that, and for
-# the costs it carries.
+# What resolves it is keeping the untrusted bytes OUT of a checkout, which the
+# `fetch-commit` input below does: the privileged job asks the API for that
+# commit as a tarball and greps the extract. Nothing is cloned, no credential
+# is persisted, and there is no checked-out script or git hook for a later step
+# to invoke, so the arrangement the alert keys on never exists.
 #
-# The `ref` input below exists for the single-stage shape. It is harmless and
-# tested, but a two-stage caller would reach the fork's files through
-# `scan-path` instead and would not need it.
+# The obvious alternative -- an unprivileged `pull_request` stage that checks
+# out the fork and hands the tree to a privileged stage as an artifact -- is
+# WRONG HERE, and it is worth being explicit about why, because it is the
+# pattern usually recommended. On a fork `pull_request` event the workflow
+# definition comes from the pull request's own merge ref, so the fork controls
+# what that stage uploads. It could hand over a sanitised tree and this guard
+# would report green on whatever the contributor chose. For a workflow that
+# posts lint results that hand-off is harmless; for a guard, the hand-off IS
+# the hole. The bytes have to come from GitHub, against a SHA taken from the
+# event payload.
+#
+# See .github/workflows/README.md under `dangerous-triggers` for the two
+# scanner measurements behind this.
 #
 # MATCH TIERS
 #   qualified  Always checked, case-insensitive (GitHub resolves repo names
@@ -203,21 +212,37 @@ on:
         type: boolean
         required: false
         default: false
-      ref:
+      fetch-commit:
         description: >
-          Commit to scan. Forwarded to actions/checkout. Defaults empty, which
-          leaves checkout to pick whatever the event would check out anyway, so
-          an existing caller that does not set this sees no change.
+          Scan this commit by FETCHING it from the API instead of checking the
+          repository out. Defaults empty, which checks out normally, so an
+          existing caller that does not set this sees no change.
+
+          This is how a fork is scanned. The caller is privileged -- it has to
+          be, or it could not read the private-repo list -- and
+          `actions/checkout` of a contributor's ref inside a privileged job is
+          the arrangement CodeQL `actions/untrusted-checkout` flags. It flags
+          the arrangement, not what the job does afterwards, so an argument that
+          nothing here executes the tree answers the alert only by dismissing
+          it. Fetching the commit as a tarball is a different arrangement: the
+          bytes are served by GitHub against a SHA from the event payload,
+          nothing is cloned, no credential is persisted, and there is no git
+          hook or checked-out script for a later step to invoke.
+
+          It also has to be a FETCH rather than an artifact handed over by an
+          unprivileged stage. On a fork `pull_request` event the workflow
+          definition comes from the pull request's own merge ref, so a fork
+          controls what such a stage would upload and could hand over a
+          sanitised tree. A guard that scanned that would report green on
+          whatever the contributor chose. The bytes must come from GitHub.
 
           Must be a full 40-character commit SHA, and the job refuses to run on
-          anything else. In practice that means
-          `github.event.pull_request.head.sha` from a `pull_request_target`
-          caller. A branch name would re-resolve at the moment checkout runs,
-          which opens a window between the verdict and the merge: a push landing
-          in it would be carried past a green check that was never computed over
-          it. A SHA cannot move, so there is no window. The restriction is
-          enforced rather than documented because a name here fails open -- the
-          scan still runs, still reports, and reports about the wrong tree.
+          anything else -- in practice `github.event.pull_request.head.sha`. A
+          branch name would re-resolve when the fetch runs, which opens a window
+          between the verdict and the merge: a push landing in it would be
+          carried past a green check never computed over it. Enforced rather
+          than documented, because a name here fails open -- the scan still
+          runs, still reports, and reports about the wrong tree.
         type: string
         required: false
         default: ""
@@ -240,38 +265,76 @@ jobs:
         with:
           egress-policy: audit
 
-      # Before checkout, because an unpinned ref is only useful to catch while
-      # it can still stop the scan rather than mislabel it.
+      # Before anything reads a tree, because an unpinned commit is only worth
+      # catching while it can still stop the scan rather than mislabel it.
       - name: Require a pinned commit
         env:
-          REF: ${{ inputs.ref }}
+          FETCH_COMMIT: ${{ inputs.fetch-commit }}
         run: |
           set -eu
-          # Empty is the documented default: checkout then does whatever the
-          # event would have done, and there is nothing to pin.
-          if [ -z "${REF:-}" ]; then
-            echo "no ref input -- checkout will use this event's default"
+          # Empty is the documented default: the repository is checked out and
+          # there is nothing to pin.
+          if [ -z "${FETCH_COMMIT:-}" ]; then
+            echo "no fetch-commit -- the repository will be checked out normally"
             exit 0
           fi
           ok=yes
-          case "$REF" in *[!0-9a-fA-F]*) ok=no ;; esac
-          [ "${#REF}" -eq 40 ] || ok=no
+          case "$FETCH_COMMIT" in *[!0-9a-fA-F]*) ok=no ;; esac
+          [ "${#FETCH_COMMIT}" -eq 40 ] || ok=no
           if [ "$ok" != yes ]; then
-            echo "::error title=private-name-guard::the ref input must be a full 40-character commit SHA. A branch or tag name re-resolves at the moment checkout runs, so a push landing between this verdict and the merge would be carried past a green check computed over a different tree; a short SHA is ambiguous. Pass github.event.pull_request.head.sha."
+            echo "::error title=private-name-guard::fetch-commit must be a full 40-character commit SHA. A branch or tag name re-resolves when the fetch runs, so a push landing between this verdict and the merge would be carried past a green check computed over a different tree; a short SHA is ambiguous. Pass github.event.pull_request.head.sha."
             exit 1
           fi
-          echo "scanning a pinned commit"
+          echo "scanning a pinned commit, fetched as data"
+
+      # Fetches the tree as DATA. See the fetch-commit input for why this is a
+      # fetch and not a checkout, and why it is not an artifact handed over by
+      # an unprivileged stage.
+      - name: Fetch the commit as data
+        id: fetch
+        if: inputs.fetch-commit != ''
+        env:
+          # The repository's own GITHUB_TOKEN, deliberately NOT the guard
+          # secret. That secret carries no Contents: Read (see TOKEN above) and
+          # must not start carrying it for this -- reading a tree and reading
+          # the private-repo list are different jobs and keep different scopes.
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.fetch-commit }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          dir=$(mktemp -d)
+          tarball=$(mktemp)
+
+          # Reads $REPO, never the fork: GitHub serves a fork pull request's
+          # head commit from the BASE repository, so the SHA is enough and no
+          # fork-owned remote is ever contacted.
+          if ! gh api "/repos/$REPO/tarball/$SHA" > "$tarball"; then
+            echo "::error title=private-name-guard::cannot fetch commit $SHA, so no tree was read and nothing is known about this one."
+            exit 1
+          fi
+
+          # --strip-components=1 drops the `<owner>-<repo>-<sha>` wrapper the
+          # API adds. This extract is data for grep. Nothing in it is executed,
+          # and the scan step is the only thing that opens it.
+          if ! tar -xzf "$tarball" -C "$dir" --strip-components=1; then
+            echo "::error title=private-name-guard::cannot unpack the fetched commit, so no tree was read and nothing is known about this one."
+            exit 1
+          fi
+
+          # An empty extract greps clean, which is indistinguishable from a
+          # clean tree and must never be reported as one.
+          if [ -z "$(ls -A "$dir")" ]; then
+            echo "::error title=private-name-guard::the fetched tree is empty, so nothing was assessed."
+            exit 1
+          fi
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
+        if: inputs.fetch-commit == ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-          # Empty means "whatever this event checks out by default", so callers
-          # that do not set it are unaffected. A `pull_request_target` caller
-          # sets it to the pull request's head SHA; GitHub serves a fork's head
-          # commit from the base repository, so no `repository:` override is
-          # needed and none is given -- the checkout stays in the base repo.
-          ref: ${{ inputs.ref }}
           # Full history only when the text scan needs it, because reading the
           # commit messages a pull request adds requires both endpoints of
           # base..head to be present. A shallow clone has neither.
@@ -301,11 +364,33 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Fetch mode. FETCH_DIR is empty unless the fetch step ran.
+          FETCH_COMMIT: ${{ inputs.fetch-commit }}
+          FETCH_DIR: ${{ steps.fetch.outputs.dir }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO_FULL: ${{ github.repository }}
+          # Second token, for the two reads that need Contents and that the
+          # guard secret deliberately cannot do. Never used for the name list.
+          BASE_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
           : "${SCAN_PATH:=.}"
           : "${GITHUB_STEP_SUMMARY:=/dev/stdout}"
+
+          # In fetch mode there is no checkout, so scan-path is relative to the
+          # extract rather than to a workspace root.
+          if [ -n "${FETCH_COMMIT:-}" ]; then
+            if [ -z "${FETCH_DIR:-}" ]; then
+              echo "::error title=private-name-guard::fetch-commit was set but the fetch step produced no directory, so no tree was read."
+              exit 1
+            fi
+            case "$SCAN_PATH" in
+              .|./) SCAN_PATH="$FETCH_DIR" ;;
+              /*)   : ;;
+              *)    SCAN_PATH="$FETCH_DIR/${SCAN_PATH#./}" ;;
+            esac
+          fi
 
           # ---- preconditions ---------------------------------------------
           # Every branch below fails. None of them can pass, because each one
@@ -319,7 +404,7 @@ jobs:
           # on this same fork pull request DOES hold the secret, and must be
           # allowed to proceed and return a real verdict.
           if [ "${IS_FORK:-false}" = "true" ] && [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error title=private-name-guard::this is a fork pull request on an event that cannot read PRIVATE_NAME_GUARD_TOKEN, so the private-repo list is unavailable and this tree was NOT ASSESSED. Scan it from a pull_request_target caller, which runs in the base repository's context and can read the secret, passing ref: github.event.pull_request.head.sha. Re-pushing the branch into this repository also works."
+            echo "::error title=private-name-guard::this is a fork pull request on an event that cannot read PRIVATE_NAME_GUARD_TOKEN, so the private-repo list is unavailable and this tree was NOT ASSESSED. Scan it from a pull_request_target caller, which runs in the base repository's context and can read the secret, passing fetch-commit: github.event.pull_request.head.sha. Re-pushing the branch into this repository also works."
             exit 1
           fi
 
@@ -611,7 +696,34 @@ jobs:
               printf '%s' "${PR_TITLE:-}" > "$txt/pull-request-title"
               printf '%s' "${PR_BODY:-}"  > "$txt/pull-request-body"
 
-              if [ -n "${PR_BASE_SHA:-}" ] && [ -n "${PR_HEAD_SHA:-}" ]; then
+              # Two ways to reach the commit messages, because fetch mode has
+              # no git repository to read them out of. Both end with one file
+              # per commit in "$txt", named by SHA, and both FAIL rather than
+              # report a short list as a clean one.
+              if [ -n "${FETCH_COMMIT:-}" ]; then
+                # The pull request number comes from the event payload, not
+                # from anything the contributor supplied, so it cannot be
+                # pointed at a different pull request.
+                if [ -z "${PR_NUMBER:-}" ] || [ "${PR_NUMBER:-0}" = "0" ]; then
+                  echo "::error title=private-name-guard::fetch mode has no pull request number, so the commit messages of this change were NOT assessed. Unassessed text is not clean text."
+                  exit 2
+                fi
+                if ! GH_TOKEN="$BASE_TOKEN" gh api \
+                       "/repos/$REPO_FULL/pulls/$PR_NUMBER/commits?per_page=100" \
+                       --paginate --jq '.[].sha' > "$wk/shas"; then
+                  echo "::error title=private-name-guard::cannot list the commits this pull request adds, so its commit messages were NOT assessed. Unassessed text is not clean text."
+                  exit 2
+                fi
+                while IFS= read -r sha; do
+                  [ -n "$sha" ] || continue
+                  if ! GH_TOKEN="$BASE_TOKEN" gh api \
+                         "/repos/$REPO_FULL/commits/$sha" \
+                         --jq '.commit.message' > "$txt/commit-$sha"; then
+                    echo "::error title=private-name-guard::cannot read the message of commit $sha, so this pull request's text was NOT fully assessed."
+                    exit 2
+                  fi
+                done < "$wk/shas"
+              elif [ -n "${PR_BASE_SHA:-}" ] && [ -n "${PR_HEAD_SHA:-}" ]; then
                 if ! git rev-list "$PR_BASE_SHA".."$PR_HEAD_SHA" > "$wk/shas" 2>"$wk/git.err"; then
                   echo "::error title=private-name-guard::cannot list the commits this pull request adds, so its commit messages were NOT assessed. Unassessed text is not clean text."
                   exit 2
