@@ -151,21 +151,28 @@ findings and fixes:
   whoever opened the pull request. Prefer `pull_request` and let the job fail
   closed on forks.
 
-  This entry used to say "use `pull_request` or a two-stage workflow". The
-  second half was wrong and is corrected here: `workflow_run` trips the *same*
-  rule at the *same* severity — measured with zizmor v1.32.0, which calls it
-  `almost always used insecurely` in the same words — so a
-  `pull_request` → `workflow_run` split relocates the finding instead of
-  removing it, while adding artifact plumbing, a `statuses: write` grant, and a
-  stage that must not believe an artifact's own claim about which commit it came
-  from. There is no arrangement of triggers that reads a fork's tree with a
-  secret in scope and comes out clean.
+  Two measurements, because the obvious reading of this rule is half wrong and
+  the other half matters more than it looks:
 
-  So where a fork genuinely must be read, the finding is answered rather than
-  avoided: suppress it in the file, immediately next to a written argument that
-  nothing downstream of the checkout executes the tree, and keep the job
-  read-only. `private-name-guard-fork.yml` is the worked example — three steps,
-  one of which is a grep.
+  - **zizmor treats both triggers alike.** `workflow_run` trips this same rule
+    at the same severity — v1.32.0 calls it `almost always used insecurely` in
+    the same words. So moving to two stages does not make zizmor quiet.
+  - **CodeQL does not.** `actions/untrusted-checkout/high` fires on the
+    *combination* — an untrusted checkout inside a **privileged** job — not on
+    the trigger. Split the work so the untrusted checkout happens in an
+    unprivileged `pull_request` stage and only the privileged stage holds the
+    secret, and the high-severity finding is genuinely gone rather than
+    suppressed.
+
+  That second point is the one to design against, so where a fork's tree must
+  be read with a secret in scope, **use the two-stage split** and accept the
+  cost: artifact plumbing, a `statuses: write` grant on the privileged stage,
+  and the rule that the privileged stage must never believe an artifact's own
+  claim about which commit it came from. A single-stage `pull_request_target`
+  that checks out the head gets a high CodeQL alert that can only be dismissed,
+  not resolved, and two independent scanners plus this entry all pointing the
+  same way is not a consensus worth overriding with a suppression.
+
 - **unpinned-uses** — `@main`/`@master`/`@v4` tags can be moved. Pin to a
   commit SHA with a trailing `# <tag>` comment.
 - **excessive-permissions** — Tighten the top-level `permissions:` block;

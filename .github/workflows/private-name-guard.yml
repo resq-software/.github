@@ -89,20 +89,31 @@
 #
 # FORKS. A `pull_request` event from a fork cannot read secrets at all, so on
 # that event the list is unavailable and the tree fails as NOT ASSESSED rather
-# than passing. The token is what is missing, not the fork -- so the way to
-# scan a fork is to run this workflow from a `pull_request_target` caller,
-# which executes in the BASE repository's context and can read the secret, and
-# to point it at the fork's commit with the `ref` input.
+# than passing. The token is what is missing, not the fork, so the fork is not
+# in itself the thing that disqualifies the run -- see the precondition below,
+# which tests for the missing token and not for the fork.
 #
-# That is safe here for a reason specific to this job and not transferable to
-# others: after checkout, nothing from the fork is installed, built, executed
-# or evaluated. The tree is read by `grep` and the pull-request text by
-# `git log`, every matcher comes from this file on the base branch, and the
-# attacker-controlled strings are forwarded through env and read as "$VAR". A
-# caller that adds any step which runs code out of the checked-out tree -- a
-# package install, a build, a generator, an action resolved from the head repo
-# -- hands PRIVATE_NAME_GUARD_TOKEN to the fork, and the fact that this file
-# is safe to call that way is not a property that step would inherit.
+# Scanning a fork therefore needs an event that CAN read the secret, and the
+# arrangement matters more than the trigger. A single `pull_request_target`
+# caller that checks out the fork's commit and scans it in the same job earns
+# CodeQL `actions/untrusted-checkout/high` -- measured on this file, 2026-11-22
+# -- and it earns it for the combination, an untrusted checkout inside a
+# privileged job, not for anything this file does afterwards. The argument that
+# nothing here executes the tree (it is read by `grep`, the pull-request text by
+# `git log`, every matcher comes from the base branch, and contributor-controlled
+# strings are forwarded through env and read as "$VAR") is true, and it is still
+# only an argument for DISMISSING that alert rather than resolving it.
+#
+# The arrangement that resolves it splits the two halves across a trust
+# boundary: an unprivileged `pull_request` stage checks out the fork and hands
+# the tree on as data, and a privileged stage holds the token and never checks
+# out anything untrusted. See .github/workflows/README.md under
+# `dangerous-triggers` for the two scanner measurements behind that, and for
+# the costs it carries.
+#
+# The `ref` input below exists for the single-stage shape. It is harmless and
+# tested, but a two-stage caller would reach the fork's files through
+# `scan-path` instead and would not need it.
 #
 # MATCH TIERS
 #   qualified  Always checked, case-insensitive (GitHub resolves repo names
